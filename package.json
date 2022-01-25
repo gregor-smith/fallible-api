@@ -1,0 +1,42 @@
+{
+  "name": "fallible-api",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    "./schema": {
+      "types": "./src/schema.d.ts",
+      "import": "./src/schema.js"
+    },
+    "./client": {
+      "types": "./src/client.d.ts",
+      "import": "./src/client.js"
+    },
+    "./server": {
+      "types": "./src/server.d.ts",
+      "import": "./src/server.js"
+    },
+    "./constants": {
+      "types": "./src/constants.d.ts",
+      "import": "./src/constants.js"
+    }
+  },
+  "sideEffects": false,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gregor-smith/fallible-api.git"
+  },
+  "author": "Gregor Smith",
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "^4.6.0-dev.20211103"
+  },
+  "dependencies": {
+    "@hapi/accept": "^5.0.2",
+    "fallible": "link:./../fallible",
+    "fallible-server": "link:./../fallible-server",
+    "runtypes": "^6.5"
+  },
+  "scripts": {
+    "typecheck": "tsc"
+  }
+}
