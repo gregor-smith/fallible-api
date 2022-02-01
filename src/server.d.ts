@@ -5,7 +5,8 @@ import type {
     Cookie,
     AwaitableIterator,
     CloseWebsocket,
-    Response as FallibleResponse
+    Response as FallibleResponse,
+    StreamBody
 } from 'fallible-server'
 import type { Failure, Runtype, Static } from 'runtypes'
 
@@ -21,9 +22,10 @@ import type {
     HasAnyResponse,
     NonBodyEndpoint,
     Files,
-    ResponseData,
     Responses,
-    Endpoints as EPS
+    Endpoints as EPS,
+    JSONResponse,
+    BinaryResponse
 } from './schema.js'
 
 
@@ -265,6 +267,12 @@ export type BodyParsingAndValidationHandlerState<
     & (Endpoint extends BodyEndpoint
         ? FilesArg<Endpoint['files']>
         : never)
+
+type ResponseData<T extends Response> = T extends JSONResponse
+    ? Static<T['data']>
+    : T extends BinaryResponse
+        ? { data: Buffer | StreamBody, mimetype: Static<T['mimetype']> }
+        : string
 
 type BodyHandlerResponses<T extends Responses> = {
     [S in keyof T]: BodyHandlerResponse<

@@ -506,6 +506,15 @@ export function createEndpointHandler(
                         'Content-Type': 'application/json; charset=utf-8'
                     }
                 })
+            case 'binary':
+                return response({
+                    ...state,
+                    body: state.body.data,
+                    headers: {
+                        ...state.headers,
+                        'Content-Type': state.body.mimetype
+                    }
+                })
             case undefined:
                 throw new Error('No response definition for status returned by body handler')
         }

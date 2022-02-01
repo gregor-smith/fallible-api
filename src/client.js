@@ -34,7 +34,7 @@ function outputDecodeError(response, exception) {
 export function buildURL(schema, endpoint, input) {
     let url = schema.prefix + endpoint
     const { method } = schema.endpoints[endpoint]
-    if (method === undefined || method === 'GET') {
+    if ((method === undefined || method === 'GET') && input !== undefined) {
         const query = encodeURIComponent(JSON.stringify(input))
         url = `${url}?${JSON_KEY}=${query}`
     }
@@ -149,6 +149,22 @@ export async function fetchEndpoint(schema, endpoint, { input, files, signal }) 
             return ok({
                 status: response.status,
                 data: result.value
+            })
+        }
+        case 'binary': {
+            if (!res.mimetype.guard(parsed.type)) {
+                return unexpectedContentTypeError(response)
+            }
+            let data
+            try {
+                data = await response.blob()
+            }
+            catch (exception) {
+                return outputDecodeError(response, exception)
+            }
+            return ok({
+                status: response.status,
+                data
             })
         }
     }

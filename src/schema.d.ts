@@ -63,8 +63,12 @@ export type JSONResponse = {
     type: 'json'
     data: Runtype
 }
+export type BinaryResponse = {
+    type: 'binary'
+    mimetype: Runtype<string>
+}
 
-export type Response = HTMLResponse | JSONResponse
+export type Response = HTMLResponse | JSONResponse | BinaryResponse
 export type Responses = { [S in Status]?: Response }
 
 export type WebsocketCommunication = {
@@ -141,11 +145,6 @@ export type Schema = {
     endpoints: Endpoints
 }
 
-export type JSONResponseData<T extends JSONResponse> = Static<T['data']>
-export type ResponseData<T extends Response> = T extends JSONResponse
-    ? JSONResponseData<T>
-    : string
-
 export type FilesData<T extends FilesDefinition> = Record<keyof T, Blob>
 
 type HasResponse<T extends Responses, R extends Response> = {
@@ -155,6 +154,7 @@ type HasResponse<T extends Responses, R extends Response> = {
 }[keyof T]
 export type HasJSONResponse<T extends Responses> = HasResponse<T, JSONResponse>
 export type HasHTMLResponse<T extends Responses> = HasResponse<T, HTMLResponse>
+export type HasBinaryResponse<T extends Responses> = HasResponse<T, BinaryResponse>
 export type HasAnyResponse<T extends Responses> = {
     [S in keyof T]: true
 }[keyof T]
