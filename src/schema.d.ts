@@ -159,9 +159,6 @@ export type HasAnyResponse<T extends Responses> = {
     [S in keyof T]: true
 }[keyof T]
 
-export type EndpointURL<S extends Schema, E extends keyof Schema['endpoints']> =
-    `${S['prefix']}${E}`
-
 
 export declare const schema: <T extends Schema>(schema: T) => T
 export declare const endpoint: <T extends Endpoint>(endpoint: T) => T

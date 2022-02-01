@@ -31,6 +31,17 @@ function outputDecodeError(response, exception) {
 }
 
 
+export function buildURL(schema, endpoint, input) {
+    let url = schema.prefix + endpoint
+    const { method } = schema.endpoints[endpoint]
+    if (method === undefined || method === 'GET') {
+        const query = encodeURIComponent(JSON.stringify(input))
+        url = `${url}?${JSON_KEY}=${query}`
+    }
+    return url
+}
+
+
 export async function fetchEndpoint(schema, endpoint, { input, files, signal }) {
     if (signal?.aborted) {
         return abortedError
@@ -45,7 +56,7 @@ export async function fetchEndpoint(schema, endpoint, { input, files, signal }) 
     let url = schema.prefix + endpoint
     let body
 
-    if (method === 'GET') {
+    if (method === undefined || method === 'GET') {
         if (input !== undefined) {
             const query = encodeURIComponent(JSON.stringify(input))
             url = `${url}?${JSON_KEY}=${query}`

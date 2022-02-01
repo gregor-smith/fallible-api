@@ -13,8 +13,23 @@ import type {
     WebsocketCommunication,
     ExtractWebsocketEndpointNames,
     Response,
-    ResponseData
+    ResponseData,
+    BodyMethod
 } from './schema.js'
+
+
+export declare function buildURL<
+    Schema extends Sch,
+    Endpoint extends keyof Schema['endpoints'],
+>(
+    schema: Schema,
+    endpoint: Endpoint,
+    ...args: Schema['endpoints'][Endpoint]['method'] extends BodyMethod
+        ? []
+        : Schema['endpoints'][Endpoint]['input'] extends Runtype
+            ? [ Static<Schema['endpoints'][Endpoint]['input']> ]
+            : []
+): string
 
 
 export type ResponseResult<Status extends number, Res extends Response> = {
