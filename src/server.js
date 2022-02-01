@@ -315,7 +315,7 @@ export function createEndpointHandler(
         }
     }
 
-    const headersHandler = (message, state) => {
+    const headersHandler = (message, _sockets, state) => {
         if (state.method !== method) {
             return errorResponse({
                 tag: 'WrongMethod',
@@ -351,7 +351,7 @@ export function createEndpointHandler(
             bodyParsingAndValidationHandler = noBodyParsingHandler
         }
         else {
-            bodyParsingAndValidationHandler = (_, state) => {
+            bodyParsingAndValidationHandler = (_message, _sockets, state) => {
                 if (state.url.query[JSON_KEY] === undefined) {
                     return errorResponse({ tag: 'URLQueryRequired' })
                 }
@@ -382,7 +382,7 @@ export function createEndpointHandler(
     else if (endpoint.files !== undefined) {
         const validator = filesValidator(endpoint.files)
         if (endpoint.input === undefined) {
-            bodyParsingAndValidationHandler = async (message, state) => {
+            bodyParsingAndValidationHandler = async (message, _sockets, state) => {
                 const parseResult = await parseMultipartStream(message)
                 switch (parseResult.tag) {
                     case 'FieldsTooLarge':
@@ -408,7 +408,7 @@ export function createEndpointHandler(
             }
         }
         else {
-            bodyParsingAndValidationHandler = async (message, state) => {
+            bodyParsingAndValidationHandler = async (message, _sockets, state) => {
                 const parseResult = await parseMultipartStream(message)
                 switch (parseResult.tag) {
                     case 'FieldsTooLarge':
@@ -456,7 +456,7 @@ export function createEndpointHandler(
         }
     }
     else if (endpoint.input !== undefined) {
-        bodyParsingAndValidationHandler = async (message, state) => {
+        bodyParsingAndValidationHandler = async (message, _sockets, state) => {
             const parseResult = await parseJSONStream(message)
             switch (parseResult.tag) {
                 case 'LimitExceeded':
@@ -489,7 +489,7 @@ export function createEndpointHandler(
         bodyParsingAndValidationHandler = noBodyParsingHandler
     }
 
-    const finalHandler = (_, state) => {
+    const finalHandler = (_message, _sockets, state) => {
         if (state.status === 101) {
             return websocketResponse(state, endpoint.websocket.up)
         }
@@ -529,8 +529,8 @@ const regexEscapePattern = /[.*+?^${}()|[\]\\]/g
 export function createSchemaHandler(schema, handlers) {
     const escaped = schema.prefix.replace(regexEscapePattern, '\\$&')
     const prefixPattern = new RegExp(`^${escaped}(.+)`)
-    return (message, state) => {
+    return (message, sockets, state) => {
         const path = prefixPattern.exec(state.url.path)?.[1]
-        return handlers[path]?.(message, state)
+        return handlers[path]?.(message, sockets, state)
     }
 }

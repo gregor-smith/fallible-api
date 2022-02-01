@@ -4,7 +4,7 @@ import type {
     Header,
     Cookie,
     AwaitableIterator,
-    CloseWebSocket,
+    CloseWebsocket,
     Response as FallibleResponse
 } from 'fallible-server'
 import type { Failure, Runtype, Static } from 'runtypes'
@@ -46,7 +46,7 @@ export type BodyHandlerResponse<Status extends number, Body> = {
 
 export type WebsocketIterator<T> = AwaitableIterator<
     T,
-    typeof CloseWebSocket | void,
+    typeof CloseWebsocket | void,
     void
 >
 
