@@ -2,11 +2,9 @@ import type { Awaitable, Result } from 'fallible'
 import type {
     MessageHandler,
     Header,
-    Cookie,
-    AwaitableIterator,
-    CloseWebsocket,
     Response as FallibleResponse,
-    StreamBody
+    StreamBody,
+    AwaitableIterable
 } from 'fallible-server'
 import type { Failure, Runtype, Static } from 'runtypes'
 
@@ -43,14 +41,18 @@ export type BodyHandlerResponse<Status extends number, Body> = {
     status: Status
     body: Body
     headers?: Record<string, Header>
-    cookies?: Record<string, Cookie>
 }
 
-export type WebsocketIterator<T> = AwaitableIterator<
-    T,
-    typeof CloseWebsocket | void,
-    void
->
+export type WebsocketHandlerResponse<In, Out> = {
+    status: 101
+    body: {
+        onOpen: WebsocketOpenCallback<Out>
+        onMessage?: WebsocketMessageCallback<In, Out>
+        onClose?: WebsocketCloseCallback
+        onSendError?: WebsocketSendErrorCallback
+    }
+    headers?: undefined
+}
 
 export type WebsocketMessageError =
     | {
@@ -67,22 +69,15 @@ export type WebsocketMessageError =
         data: Buffer | Buffer[] | ArrayBuffer
     }
 
-export type WebsocketOpenCallback<T> = () => WebsocketIterator<T>
+export type WebsocketOpenCallback<T> = () => AwaitableIterable<T>
 export type WebsocketMessageCallback<In, Out> = (
     message: Result<In, WebsocketMessageError>
-) => WebsocketIterator<Out>
+) => AwaitableIterable<Out>
 export type WebsocketCloseCallback = (code: number, reason: string) => Awaitable<void>
 export type WebsocketSendErrorCallback = (
     message: string | Buffer | Buffer[] | ArrayBuffer,
     error: globalThis.Error
 ) => Awaitable<void>
-
-export type WebsocketBody<In, Out> = {
-    onOpen?: WebsocketOpenCallback<Out>
-    onMessage: WebsocketMessageCallback<In, Out>
-    onClose?: WebsocketCloseCallback
-    onSendError?: WebsocketSendErrorCallback
-}
 
 
 export type WrongMethodError = {
@@ -113,6 +108,10 @@ export type InvalidContentTypeHeaderError = {
     tag: 'InvalidContentTypeHeader'
     header: string
 }
+export type UnsupportedContentEncodingHeaderError = {
+    tag: 'UnsupportedContentEncodingHeader'
+    header: string
+}
 
 export type URLQueryRequiredError = {
     tag: 'URLQueryRequired'
@@ -126,11 +125,23 @@ export type URLQueryInputInvalidError = {
     input: unknown
 }
 
-export type MultipartFieldsTooLargeError = {
-    tag: 'MultipartFieldsTooLarge'
+export type MultipartStreamClosedError = {
+    tag: 'MultipartStreamClosed'
 }
-export type MultipartFilesTooLargeError = {
-    tag: 'MultipartFilesTooLarge'
+export type MultipartFileBelowMinimumSizeError = {
+    tag: 'MultipartFileBelowMinimumSize'
+}
+export type MultipartMaximumFileCountExceededError = {
+    tag: 'MultipartMaximumFileCountExceeded'
+}
+export type MultipartMaximumFileSizeExceededError = {
+    tag: 'MultipartMaximumFileSizeExceeded'
+}
+export type MultipartMaximumFieldsCountExceededError = {
+    tag: 'MultipartMaximumFieldsCountExceeded'
+}
+export type MultipartMaximumFieldsSizeExceededError = {
+    tag: 'MultipartMaximumFieldsSizeExceeded'
 }
 export type MultipartUnknownParseError = {
     tag: 'MultipartUnknownParseError'
@@ -161,10 +172,6 @@ export type JSONStreamClosedError = {
 export type JSONStreamMalformedError = {
     tag: 'JSONStreamMalformed'
 }
-export type JSONStreamUnknownParseError = {
-    tag: 'JSONStreamUnknownParseError'
-    error: unknown
-}
 export type JSONInputInvalidError = {
     tag: 'JSONInputInvalid'
     input: unknown
@@ -189,9 +196,9 @@ export type HeadersHandlerError<Endpoint extends EP> =
         : never)
     | (Endpoint extends BodyEndpoint
         ? (Endpoint['files'] extends FilesDefinition
-            ? InvalidContentTypeHeaderError
+            ? InvalidContentTypeHeaderError | UnsupportedContentEncodingHeaderError
             : (Endpoint['input'] extends Runtype
-                ? InvalidContentTypeHeaderError
+                ? InvalidContentTypeHeaderError | UnsupportedContentEncodingHeaderError
                 : never))
         : never)
 
@@ -208,8 +215,12 @@ export type BodyParsingAndValidationHandlerError<Endpoint extends EP, T> =
         : (Endpoint extends BodyEndpoint
             ? Endpoint['files'] extends FilesDefinition
                 ? (
-                    | MultipartFieldsTooLargeError
-                    | MultipartFilesTooLargeError
+                    | MultipartStreamClosedError
+                    | MultipartFileBelowMinimumSizeError
+                    | MultipartMaximumFileCountExceededError
+                    | MultipartMaximumFileSizeExceededError
+                    | MultipartMaximumFieldsCountExceededError
+                    | MultipartMaximumFieldsSizeExceededError
                     | MultipartUnknownParseError
                     | MultipartFilesInvalidError
                     | (Endpoint['input'] extends Runtype
@@ -224,7 +235,6 @@ export type BodyParsingAndValidationHandlerError<Endpoint extends EP, T> =
                     | JSONTooLargeError
                     | JSONStreamClosedError
                     | JSONStreamMalformedError
-                    | JSONStreamUnknownParseError
                     | JSONInputInvalidError
                 )
             : never))
@@ -271,7 +281,7 @@ export type BodyParsingAndValidationHandlerState<
 type ResponseData<T extends Response> = T extends JSONResponse
     ? Static<T['data']>
     : T extends BinaryResponse
-        ? { data: Buffer | StreamBody, mimetype: Static<T['mimetype']> }
+        ? { data: Uint8Array | StreamBody, mimetype: Static<T['mimetype']> }
         : string
 
 type BodyHandlerResponses<T extends Responses> = {
@@ -283,7 +293,7 @@ type BodyHandlerResponses<T extends Responses> = {
 
 export type BodyHandlerState<Endpoint extends EP> =
     | (Endpoint extends WebsocketEndpoint
-        ? BodyHandlerResponse<101, WebsocketBody<Static<Endpoint['websocket']['up']>, Static<Endpoint['websocket']['down']>>>
+        ? WebsocketHandlerResponse<Static<Endpoint['websocket']['up']>, Static<Endpoint['websocket']['down']>>
         : never)
     | BodyHandlerResponses<Endpoint['responses']>
 

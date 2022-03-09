@@ -6,7 +6,7 @@ import {
     parseContentTypeHeader,
     parseJSONStream,
     parseJSONString,
-    parseMultipartStream,
+    parseMultipartRequest,
     response
 } from 'fallible-server'
 import {
@@ -78,33 +78,15 @@ function isUTF8JSONContentTypeHeader(header) {
     }
     const contentType = parseContentTypeHeader(header)
     return contentType !== undefined
-        && contentType.characterSet !== undefined
         && contentType.type === 'application/json'
         && isUTF8Charset(contentType.characterSet)
 }
 
 
-function filesValidator(files) {
-    const entries = Object.entries(files)
-        .map(([ file, definition ]) => [
-            file,
-            Record_(definition)
-        ])
-    return Record_(
-        Object.fromEntries(entries)
-    )
-}
-
-
 function jsonOnOpenCallback(onOpen) {
     return async function * () {
-        const iterator = onOpen()
-        while (true) {
-            const result = await iterator.next()
-            if (result.done) {
-                return result.value
-            }
-            yield JSON.stringify(result.value)
+        for await (const value of onOpen()) {
+            yield JSON.stringify(value)
         }
     }
 }
@@ -132,13 +114,8 @@ function messageToResult(data, validator) {
 function jsonOnMessageCallback(onMessage, validator) {
     return async function * (data) {
         const result = messageToResult(data, validator)
-        const iterator = onMessage(result)
-        while (true) {
-            const result = await iterator.next()
-            if (result.done) {
-                return result.value
-            }
-            yield JSON.stringify(result.value)
+        for await (const value of onMessage(result)) {
+            yield JSON.stringify(value)
         }
     }
 }
@@ -149,10 +126,10 @@ function websocketResponse(state, inValidator) {
         ...state,
         body: {
             ...state.body,
-            onOpen: state.body.onOpen === undefined
+            onOpen: jsonOnOpenCallback(state.body.onOpen),
+            onMessage: state.body.onMessage === undefined
                 ? undefined
-                : jsonOnOpenCallback(state.body.onOpen),
-            onMessage: jsonOnMessageCallback(state.body.onMessage, inValidator)
+                : jsonOnMessageCallback(state.body.onMessage, inValidator)
         }
     })
 }
@@ -218,7 +195,18 @@ function checkAcceptForEndpointWithResponses(headers, isWebsocketRequest, matchC
 }
 
 
+function checkContentEncodingForBodyEndpoint(headers) {
+    if (headers['Content-Encoding'] !== undefined) {
+        throw new HandlerException({
+            tag: 'UnsupportedContentEncodingHeader',
+            header: headers['Content-Encoding']
+        })
+    }
+}
+
+
 function checkContentTypeForBodyEndpointWithFiles(headers) {
+    checkContentEncodingForBodyEndpoint(headers)
     if (!headers['Content-Type']?.startsWith('multipart/form-data')) {
         throw new HandlerException({
             tag: 'InvalidContentTypeHeader',
@@ -229,6 +217,7 @@ function checkContentTypeForBodyEndpointWithFiles(headers) {
 
 
 function checkContentTypeForBodyEndpointWithInputButNoFiles(headers) {
+    checkContentEncodingForBodyEndpoint(headers)
     if (!isUTF8JSONContentTypeHeader(headers['Content-Type'])) {
         throw new HandlerException({
             tag: 'InvalidContentTypeHeader',
@@ -240,6 +229,47 @@ function checkContentTypeForBodyEndpointWithInputButNoFiles(headers) {
 
 function noBodyParsingHandler(_, state) {
     return okResponse(state)
+}
+
+
+async function parseMultipart(message, files) {
+    const parseResult = await parseMultipartRequest(message)
+    if (!parseResult.ok) {
+        switch (parseResult.tag) {
+            case 'RequestAborted':
+                throw new HandlerException({ tag: 'MultipartStreamClosed' })
+            case 'BelowMinimumFileSize':
+                throw new HandlerException({ tag: 'MultipartFileBelowMinimumSize' })
+            case 'MaximumFileCountExceeded':
+            case 'MaximumFileSizeExceeded':
+            case 'MaximumFieldsCountExceeded':
+            case 'MaximumFieldsSizeExceeded':
+                throw new HandlerException({ tag: `Multipart${parseResult.tag}` })
+            case 'UnknownError':
+                throw new HandlerException({
+                    tag: 'MultipartUnknownParseError',
+                    error: parseResult.error
+                })
+            default:
+                throw new Error('Unexpected multipart parse result')
+        }
+    }
+    const entries = Object.entries(files)
+        .map(([ file, definition ]) => [
+            file,
+            Record_(definition)
+        ])
+    const validator = Record_(
+        Object.fromEntries(entries)
+    )
+    const filesValidationResult = validator.validate(parseResult.value.files)
+    if (!filesValidationResult.success) {
+        throw new HandlerException({
+            tag: 'MultipartFilesInvalid',
+            files: parseResult.value.files
+        })
+    }
+    return filesValidationResult.value
 }
 
 
@@ -285,6 +315,8 @@ export function createEndpointHandler(
         case 'optional': {
             checkAuth = checkAuthForOptionalAuthEndpoint
         }
+        default:
+            throw new Error('Unexpected endpoint auth type')
     }
 
     let contentTypeMatcher
@@ -315,7 +347,7 @@ export function createEndpointHandler(
         }
     }
 
-    const headersHandler = (message, _sockets, state) => {
+    const headersHandler = (message, state) => {
         if (state.method !== method) {
             return errorResponse({
                 tag: 'WrongMethod',
@@ -351,7 +383,7 @@ export function createEndpointHandler(
             bodyParsingAndValidationHandler = noBodyParsingHandler
         }
         else {
-            bodyParsingAndValidationHandler = (_message, _sockets, state) => {
+            bodyParsingAndValidationHandler = (_, state) => {
                 if (state.url.query[JSON_KEY] === undefined) {
                     return errorResponse({ tag: 'URLQueryRequired' })
                 }
@@ -380,52 +412,32 @@ export function createEndpointHandler(
         }
     }
     else if (endpoint.files !== undefined) {
-        const validator = filesValidator(endpoint.files)
         if (endpoint.input === undefined) {
-            bodyParsingAndValidationHandler = async (message, _sockets, state) => {
-                const parseResult = await parseMultipartStream(message)
-                switch (parseResult.tag) {
-                    case 'FieldsTooLarge':
-                    case 'FilesTooLarge':
-                        return errorResponse({ tag: `Multipart${parseResult.tag}` })
-                    case 'OtherError':
-                        return errorResponse({
-                            tag: 'MultipartUnknownParseError',
-                            error: parseResult.error
-                        })
+            bodyParsingAndValidationHandler = async (message, state) => {
+                let files
+                try {
+                    files = await parseMultipart(message, endpoint.files)
                 }
-                const filesValidationResult = validator.validate(parseResult.value.files)
-                if (!filesValidationResult.success) {
-                    return errorResponse({
-                        tag: 'MultipartFilesInvalid',
-                        files: parseResult.value.files
-                    })
+                catch (err) {
+                    if (!(err instanceof HandlerException)) {
+                        throw err
+                    }
+                    return errorResponse(err.value)
                 }
-                return okResponse({
-                    ...state,
-                    files: filesValidationResult.value
-                })
+                return okResponse({ ...state, files })
             }
         }
         else {
-            bodyParsingAndValidationHandler = async (message, _sockets, state) => {
-                const parseResult = await parseMultipartStream(message)
-                switch (parseResult.tag) {
-                    case 'FieldsTooLarge':
-                    case 'FilesTooLarge':
-                        return errorResponse({ tag: `Multipart${parseResult.tag}` })
-                    case 'OtherError':
-                        return errorResponse({
-                            tag: 'MultipartUnknownParseError',
-                            error: parseResult.error
-                        })
+            bodyParsingAndValidationHandler = async (message, state) => {
+                let files
+                try {
+                    files = await parseMultipart(message, endpoint.files)
                 }
-                const filesValidationResult = validator.validate(parseResult.value.files)
-                if (!filesValidationResult.success) {
-                    return errorResponse({
-                        tag: 'MultipartFilesInvalid',
-                        files: parseResult.value.files
-                    })
+                catch (err) {
+                    if (!(err instanceof HandlerException)) {
+                        throw err
+                    }
+                    return errorResponse(err.value)
                 }
                 if (parseResult.value.fields[JSON_KEY] === undefined) {
                     return errorResponse({ tag: 'MultipartJSONFieldRequired' })
@@ -450,27 +462,26 @@ export function createEndpointHandler(
                 return okResponse({
                     ...state,
                     input: inputValidationResult.value,
-                    files: filesValidationResult.value
+                    files
                 })
             }
         }
     }
     else if (endpoint.input !== undefined) {
-        bodyParsingAndValidationHandler = async (message, _sockets, state) => {
+        bodyParsingAndValidationHandler = async (message, state) => {
             const parseResult = await parseJSONStream(message)
-            switch (parseResult.tag) {
-                case 'LimitExceeded':
-                    return errorResponse({ tag: 'JSONTooLarge' })
-                case 'StreamClosed':
-                    return errorResponse({ tag: 'JSONStreamClosed' })
-                case 'NonBufferChunk':
-                case 'InvalidSyntax':
-                    return errorResponse({ tag: 'JSONStreamMalformed' })
-                case 'OtherError':
-                    return errorResponse({
-                        tag: 'JSONStreamUnknownParseError',
-                        error: parseResult.error
-                    })
+            if (!parseResult.ok) {
+                switch (parseResult.tag) {
+                    case 'MaximumSizeExceeded':
+                        return errorResponse({ tag: 'JSONTooLarge' })
+                    case 'ReadError':
+                        return errorResponse({ tag: 'JSONStreamClosed' })
+                    case 'DecodeError':
+                    case 'InvalidSyntax':
+                        return errorResponse({ tag: 'JSONStreamMalformed' })
+                    default:
+                        throw new Error('Unexpected JSON parse result')
+                }
             }
             const validationResult = endpoint.input.validate(parseResult.value)
             if (!validationResult.success) {
@@ -489,7 +500,7 @@ export function createEndpointHandler(
         bodyParsingAndValidationHandler = noBodyParsingHandler
     }
 
-    const finalHandler = (_message, _sockets, state) => {
+    const finalHandler = (_, state) => {
         if (state.status === 101) {
             return websocketResponse(state, endpoint.websocket.up)
         }
@@ -515,8 +526,8 @@ export function createEndpointHandler(
                         'Content-Type': state.body.mimetype
                     }
                 })
-            case undefined:
-                throw new Error('No response definition for status returned by body handler')
+            default:
+                throw new Error('Unexpected response type')
         }
     }
 
@@ -538,8 +549,8 @@ const regexEscapePattern = /[.*+?^${}()|[\]\\]/g
 export function createSchemaHandler(schema, handlers) {
     const escaped = schema.prefix.replace(regexEscapePattern, '\\$&')
     const prefixPattern = new RegExp(`^${escaped}(.+)`)
-    return (message, sockets, state) => {
+    return (message, state, sockets) => {
         const path = prefixPattern.exec(state.url.path)?.[1]
-        return handlers[path]?.(message, sockets, state)
+        return handlers[path]?.(message, state, sockets)
     }
 }
