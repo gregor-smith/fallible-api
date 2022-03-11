@@ -151,6 +151,9 @@ export type MultipartMaximumFileCountExceededError = {
 export type MultipartMaximumFileSizeExceededError = {
     tag: 'MultipartMaximumFileSizeExceeded'
 }
+export type MultipartMaximumTotalFileSizeExceededError = {
+    tag: 'MultipartMaximumTotalFileSizeExceeded'
+}
 export type MultipartMaximumFieldsCountExceededError = {
     tag: 'MultipartMaximumFieldsCountExceeded'
 }

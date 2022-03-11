@@ -213,6 +213,18 @@ function checkContentEncodingForBodyEndpoint(headers) {
 }
 
 
+function getContentLength(headers) {
+    if (headers['Content-Length'] === undefined) {
+        throw new InternalException({ tag: 'InvalidContentLengthHeader' })
+    }
+    const length = parseContentLengthHeader(headers['Content-Length'])
+    if (length === undefined) {
+        throw new InternalException({ tag: 'InvalidContentLengthHeader' })
+    }
+    return length
+}
+
+
 function checkContentForBodyEndpointWithFiles(headers, config) {
     checkContentEncodingForBodyEndpoint(headers)
     if (!headers['Content-Type']?.startsWith('multipart/form-data')) {
@@ -221,15 +233,21 @@ function checkContentForBodyEndpointWithFiles(headers, config) {
             header: headers['Content-Type']
         })
     }
-    if (headers['Content-Length'] === undefined) {
-        throw new InternalException({ tag: 'MissingContentLengthHeader' })
+    const length = getContentLength(headers)
+    if (config?.multipart === undefined) {
+        return
     }
-    const length = parseContentLengthHeader(headers['Content-Length'])
-    if (length < config?.multipart?.minimumFileSize) {
+    const {
+        minimumFileSize = 0,
+        maximumFileSize = Infinity,
+        maximumFileCount = Infinity,
+        maximumFieldsSize = Infinity
+    } = config.multipart
+    if (length < minimumFileSize) {
         throw new InternalException({ tag: 'MultipartFileBelowMinimumSize' })
     }
-    if (length > config?.multipart?.maximumFileSize) {
-        throw new InternalException({ tag: 'MultipartMaximumFileSizeExceeded' })
+    if (length > (maximumFileSize * maximumFileCount) + maximumFieldsSize) {
+        throw new InternalException({ tag: 'MultipartMaximumTotalFileSizeExceeded' })
     }
 }
 
@@ -242,11 +260,8 @@ function checkContentForBodyEndpointWithInputButNoFiles(headers, config) {
             header: headers['Content-Type']
         })
     }
-    if (headers['Content-Length'] === undefined) {
-        throw new InternalException({ tag: 'MissingContentLengthHeader' })
-    }
-    const length = parseContentLengthHeader(headers['Content-Length'])
-    if (length > config?.json?.maximumSize) {
+    const length = getContentLength(headers)
+    if (length > config?.json?.maximumSize ?? Infinity) {
         throw new InternalException({ tag: 'JSONMaximumSizeExceeded' })
     }
 }
@@ -267,6 +282,7 @@ async function parseMultipart(message, files, config) {
                 throw new InternalException({ tag: 'MultipartFileBelowMinimumSize' })
             case 'MaximumFileCountExceeded':
             case 'MaximumFileSizeExceeded':
+            case 'MaximumTotalFileSizeExceeded':
             case 'MaximumFieldsCountExceeded':
             case 'MaximumFieldsSizeExceeded':
                 throw new InternalException({ tag: `Multipart${parseResult.tag}` })
