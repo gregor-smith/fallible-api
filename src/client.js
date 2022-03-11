@@ -173,22 +173,22 @@ export async function fetchEndpoint(schema, endpoint, { input, files, signal }) 
 
 export class ValidatedWebsocket {
     constructor(socket, validator) {
-        this.socket = socket
+        this.#socket = socket
+        this.#messageListeners = []
         this.validator = validator
-        this.messageListeners = []
 
         socket.addEventListener('message', ({ data }) => {
-            if (this.messageListeners.length === 0) {
+            if (this.#messageListeners.length === 0) {
                 return
             }
-            const result = this.processMessageData(data)
-            for (const listener of this.messageListeners) {
+            const result = this.#processMessageData(data)
+            for (const listener of this.#messageListeners) {
                 listener(result)
             }
         })
     }
 
-    processMessageData(message) {
+    #processMessageData(message) {
         if (typeof message !== 'string') {
             return error({
                 tag: 'InvalidTypeError',
@@ -217,35 +217,35 @@ export class ValidatedWebsocket {
     }
 
     addCloseListener(listener) {
-        this.socket.addEventListener('close', listener)
+        this.#socket.addEventListener('close', listener)
     }
 
     removeCloseListener(listener) {
-        this.socket.removeEventListener('close', listener)
+        this.#socket.removeEventListener('close', listener)
     }
 
     addMessageListener(listener) {
-        this.messageListeners.push(listener)
+        this.#messageListeners.push(listener)
     }
 
     removeMessageListener(listener) {
-        this.messageListeners = this.messageListeners.filter(l => l !== listener)
+        this.#messageListeners = this.#messageListeners.filter(l => l !== listener)
     }
 
     close() {
-        this.socket.close()
+        this.#socket.close()
     }
 
     send(message) {
-        this.socket.send(JSON.stringify(message))
+        this.#socket.send(JSON.stringify(message))
     }
 
     get state() {
-        return this.socket.readyState
+        return this.#socket.readyState
     }
 
     get buffered() {
-        return this.socket.bufferedAmount
+        return this.#socket.bufferedAmount
     }
 }
 

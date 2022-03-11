@@ -143,6 +143,13 @@ class HandlerException extends Error {
 }
 
 
+function throwIfOtherException(exception) {
+    if (!(exception instanceof HandlerException)) {
+        throw exception
+    }
+}
+
+
 function checkUpgradeForNoResponsesWebsocketEndpoint(isWebsocketRequest) {
     if (!isWebsocketRequest) {
         throw new HandlerException({ tag: 'UpgradeRequired' })
@@ -233,6 +240,7 @@ function noBodyParsingHandler(_, state) {
 
 
 async function parseMultipart(message, files) {
+    // TODO: allow configuring min/max file sizes etc
     const parseResult = await parseMultipartRequest(message)
     if (!parseResult.ok) {
         switch (parseResult.tag) {
@@ -314,6 +322,7 @@ export function createEndpointHandler(
         }
         case 'optional': {
             checkAuth = checkAuthForOptionalAuthEndpoint
+            break
         }
         default:
             throw new Error('Unexpected endpoint auth type')
@@ -362,11 +371,10 @@ export function createEndpointHandler(
             checkAuth?.(state.headers, state.cookies)
             checkAccept?.(state.headers, isWebsocketRequest, contentTypeMatcher)
             checkContentType?.(state.headers)
+            // TODO: check content length against min/max file sizes etc
         }
         catch (err) {
-            if (!(err instanceof HandlerException)) {
-                throw err
-            }
+            throwIfOtherException(err)
             return errorResponse(err.value)
         }
 
@@ -419,9 +427,7 @@ export function createEndpointHandler(
                     files = await parseMultipart(message, endpoint.files)
                 }
                 catch (err) {
-                    if (!(err instanceof HandlerException)) {
-                        throw err
-                    }
+                    throwIfOtherException(err)
                     return errorResponse(err.value)
                 }
                 return okResponse({ ...state, files })
@@ -434,9 +440,7 @@ export function createEndpointHandler(
                     files = await parseMultipart(message, endpoint.files)
                 }
                 catch (err) {
-                    if (!(err instanceof HandlerException)) {
-                        throw err
-                    }
+                    throwIfOtherException(err)
                     return errorResponse(err.value)
                 }
                 if (parseResult.value.fields[JSON_KEY] === undefined) {
@@ -504,8 +508,7 @@ export function createEndpointHandler(
         if (state.status === 101) {
             return websocketResponse(state, endpoint.websocket.up)
         }
-        const res = endpoint.responses[state.status]
-        switch (res?.type) {
+        switch (endpoint.responses[state.status]?.type) {
             case 'html':
                 return response(state)
             case 'json':
@@ -513,8 +516,8 @@ export function createEndpointHandler(
                     ...state,
                     body: JSON.stringify(state.body),
                     headers: {
-                        ...state.headers,
-                        'Content-Type': 'application/json; charset=utf-8'
+                        'Content-Type': 'application/json; charset=utf-8',
+                        ...state.headers
                     }
                 })
             case 'binary':
@@ -522,8 +525,8 @@ export function createEndpointHandler(
                     ...state,
                     body: state.body.data,
                     headers: {
-                        ...state.headers,
-                        'Content-Type': state.body.mimetype
+                        'Content-Type': state.body.mimetype,
+                        ...state.headers
                     }
                 })
             default:
@@ -545,12 +548,11 @@ export function createEndpointHandler(
 
 const regexEscapePattern = /[.*+?^${}()|[\]\\]/g
 
-
 export function createSchemaHandler(schema, handlers) {
     const escaped = schema.prefix.replace(regexEscapePattern, '\\$&')
     const prefixPattern = new RegExp(`^${escaped}(.+)`)
     return (message, state, sockets) => {
         const path = prefixPattern.exec(state.url.path)?.[1]
-        return handlers[path]?.(message, state, sockets)
+        return handlers[path]?.(message, state, sockets) ?? response()
     }
 }
