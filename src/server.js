@@ -7,6 +7,7 @@ import {
     parseJSONStream,
     parseJSONString,
     parseMultipartRequest,
+    parseContentLengthHeader,
     response
 } from 'fallible-server'
 import {
@@ -135,7 +136,7 @@ function websocketResponse(state, inValidator) {
 }
 
 
-class HandlerException extends Error {
+class InternalException extends Error {
     constructor(value) {
         super()
         this.value = value
@@ -144,7 +145,7 @@ class HandlerException extends Error {
 
 
 function throwIfOtherException(exception) {
-    if (!(exception instanceof HandlerException)) {
+    if (!(exception instanceof InternalException)) {
         throw exception
     }
 }
@@ -152,31 +153,31 @@ function throwIfOtherException(exception) {
 
 function checkUpgradeForNoResponsesWebsocketEndpoint(isWebsocketRequest) {
     if (!isWebsocketRequest) {
-        throw new HandlerException({ tag: 'UpgradeRequired' })
+        throw new InternalException({ tag: 'UpgradeRequired' })
     }
 }
 
 
 function checkUpgradeForNonWebsocketEndpoint(isWebsocketRequest) {
     if (isWebsocketRequest) {
-        throw new HandlerException({ tag: 'UpgradeDenied' })
+        throw new InternalException({ tag: 'UpgradeDenied' })
     }
 }
 
 
 function checkAuthForRequiredAuthEndpoint(headers, cookies) {
     if (headers[CSRF_HEADER] === undefined) {
-        throw new HandlerException({ tag: 'CSRFHeaderRequired' })
+        throw new InternalException({ tag: 'CSRFHeaderRequired' })
     }
     if (cookies[AUTH_COOKIE_NAME] === undefined) {
-        throw new HandlerException({ tag: 'AuthRequired' })
+        throw new InternalException({ tag: 'AuthRequired' })
     }
 }
 
 
 function checkAuthForOptionalAuthEndpoint(headers) {
     if (headers[CSRF_HEADER] === undefined) {
-        throw new HandlerException({ tag: 'CSRFHeaderRequired' })
+        throw new InternalException({ tag: 'CSRFHeaderRequired' })
     }
 }
 
@@ -187,14 +188,14 @@ function checkAcceptForEndpointWithResponses(headers, isWebsocketRequest, matchC
     }
     if (headers['Accept'] === undefined
             || !preferredContentTypes(headers['Accept']).some(matchContentType)) {
-        throw new HandlerException({
+        throw new InternalException({
             tag: 'InvalidAcceptHeader',
             header: headers['Accept']
         })
     }
     if (headers['Accept-Charset'] === undefined
             || !preferredCharsets(headers['Accept-Charset']).some(isUTF8Charset)) {
-        throw new HandlerException({
+        throw new InternalException({
             tag: 'InvalidAcceptCharsetHeader',
             header: headers['Accept-Charset']
         })
@@ -204,7 +205,7 @@ function checkAcceptForEndpointWithResponses(headers, isWebsocketRequest, matchC
 
 function checkContentEncodingForBodyEndpoint(headers) {
     if (headers['Content-Encoding'] !== undefined) {
-        throw new HandlerException({
+        throw new InternalException({
             tag: 'UnsupportedContentEncodingHeader',
             header: headers['Content-Encoding']
         })
@@ -212,24 +213,41 @@ function checkContentEncodingForBodyEndpoint(headers) {
 }
 
 
-function checkContentTypeForBodyEndpointWithFiles(headers) {
+function checkContentForBodyEndpointWithFiles(headers, config) {
     checkContentEncodingForBodyEndpoint(headers)
     if (!headers['Content-Type']?.startsWith('multipart/form-data')) {
-        throw new HandlerException({
+        throw new InternalException({
             tag: 'InvalidContentTypeHeader',
             header: headers['Content-Type']
         })
     }
+    if (headers['Content-Length'] === undefined) {
+        throw new InternalException({ tag: 'MissingContentLengthHeader' })
+    }
+    const length = parseContentLengthHeader(headers['Content-Length'])
+    if (length < config?.multipart?.minimumFileSize) {
+        throw new InternalException({ tag: 'MultipartFileBelowMinimumSize' })
+    }
+    if (length > config?.multipart?.maximumFileSize) {
+        throw new InternalException({ tag: 'MultipartMaximumFileSizeExceeded' })
+    }
 }
 
 
-function checkContentTypeForBodyEndpointWithInputButNoFiles(headers) {
+function checkContentForBodyEndpointWithInputButNoFiles(headers, config) {
     checkContentEncodingForBodyEndpoint(headers)
     if (!isUTF8JSONContentTypeHeader(headers['Content-Type'])) {
-        throw new HandlerException({
+        throw new InternalException({
             tag: 'InvalidContentTypeHeader',
             header: headers['Content-Type']
         })
+    }
+    if (headers['Content-Length'] === undefined) {
+        throw new InternalException({ tag: 'MissingContentLengthHeader' })
+    }
+    const length = parseContentLengthHeader(headers['Content-Length'])
+    if (length > config?.json?.maximumSize) {
+        throw new InternalException({ tag: 'JSONMaximumSizeExceeded' })
     }
 }
 
@@ -244,16 +262,16 @@ async function parseMultipart(message, files, config) {
     if (!parseResult.ok) {
         switch (parseResult.tag) {
             case 'RequestAborted':
-                throw new HandlerException({ tag: 'MultipartStreamClosed' })
+                throw new InternalException({ tag: 'MultipartStreamClosed' })
             case 'BelowMinimumFileSize':
-                throw new HandlerException({ tag: 'MultipartFileBelowMinimumSize' })
+                throw new InternalException({ tag: 'MultipartFileBelowMinimumSize' })
             case 'MaximumFileCountExceeded':
             case 'MaximumFileSizeExceeded':
             case 'MaximumFieldsCountExceeded':
             case 'MaximumFieldsSizeExceeded':
-                throw new HandlerException({ tag: `Multipart${parseResult.tag}` })
+                throw new InternalException({ tag: `Multipart${parseResult.tag}` })
             case 'UnknownError':
-                throw new HandlerException({
+                throw new InternalException({
                     tag: 'MultipartUnknownParseError',
                     error: parseResult.error
                 })
@@ -271,7 +289,7 @@ async function parseMultipart(message, files, config) {
     )
     const filesValidationResult = validator.validate(parseResult.value.files)
     if (!filesValidationResult.success) {
-        throw new HandlerException({
+        throw new InternalException({
             tag: 'MultipartFilesInvalid',
             files: parseResult.value.files
         })
@@ -343,15 +361,15 @@ export function createEndpointHandler(
         checkAccept = checkAcceptForEndpointWithResponses
     }
 
-    let checkContentType
+    let checkContent
     if (method !== 'GET') {
         if (endpoint.files === undefined) {
             if (endpoint.input !== undefined) {
-                checkContentType = checkContentTypeForBodyEndpointWithInputButNoFiles
+                checkContent = checkContentForBodyEndpointWithInputButNoFiles
             }
         }
         else {
-            checkContentType = checkContentTypeForBodyEndpointWithFiles
+            checkContent = checkContentForBodyEndpointWithFiles
         }
     }
 
@@ -369,8 +387,7 @@ export function createEndpointHandler(
             checkUpgrade?.(isWebsocketRequest)
             checkAuth?.(state.headers, state.cookies)
             checkAccept?.(state.headers, isWebsocketRequest, contentTypeMatcher)
-            checkContentType?.(state.headers)
-            // TODO: check content length against min/max file sizes etc
+            checkContent?.(state.headers, state.config)
         }
         catch (err) {
             throwIfOtherException(err)
@@ -484,7 +501,7 @@ export function createEndpointHandler(
             if (!parseResult.ok) {
                 switch (parseResult.tag) {
                     case 'MaximumSizeExceeded':
-                        return errorResponse({ tag: 'JSONTooLarge' })
+                        return errorResponse({ tag: 'JSONMaximumSizeExceeded' })
                     case 'ReadError':
                         return errorResponse({ tag: 'JSONStreamClosed' })
                     case 'DecodeError':

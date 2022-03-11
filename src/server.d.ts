@@ -177,8 +177,8 @@ export type MultipartJSONFieldInputInvalidError = {
     input: unknown
 }
 
-export type JSONTooLargeError = {
-    tag: 'JSONTooLarge'
+export type JSONMaximumSizeExceededError = {
+    tag: 'JSONMaximumSizeExceeded'
 }
 export type JSONStreamClosedError = {
     tag: 'JSONStreamClosed'
@@ -246,7 +246,7 @@ export type BodyParsingAndValidationHandlerError<Endpoint extends EP, T> =
                         : never)
                 )
                 : (
-                    | JSONTooLargeError
+                    | JSONMaximumSizeExceededError
                     | JSONStreamClosedError
                     | JSONStreamMalformedError
                     | JSONInputInvalidError
