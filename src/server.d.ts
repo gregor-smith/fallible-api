@@ -35,6 +35,20 @@ export type EndpointHandlerPreState = {
     method: Method
     headers: Record<string, string>
     cookies: Record<string, string>
+    config?: {
+        multipart?: {
+            minimumFileSize?: number
+            maximumFileSize?: number
+            maximumFileCount?: number
+            maximumFieldsCount?: number
+            maximumFieldsSize?: number
+            saveDirectory?: string
+            keepFileExtensions?: boolean
+        }
+        json?: {
+            maximumSize?: number
+        }
+    }
 }
 
 export type BodyHandlerResponse<Status extends number, Body> = {

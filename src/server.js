@@ -239,9 +239,8 @@ function noBodyParsingHandler(_, state) {
 }
 
 
-async function parseMultipart(message, files) {
-    // TODO: allow configuring min/max file sizes etc
-    const parseResult = await parseMultipartRequest(message)
+async function parseMultipart(message, files, config) {
+    const parseResult = await parseMultipartRequest(message, config)
     if (!parseResult.ok) {
         switch (parseResult.tag) {
             case 'RequestAborted':
@@ -424,7 +423,11 @@ export function createEndpointHandler(
             bodyParsingAndValidationHandler = async (message, state) => {
                 let files
                 try {
-                    files = await parseMultipart(message, endpoint.files)
+                    files = await parseMultipart(
+                        message,
+                        endpoint.files,
+                        state.config?.multipart
+                    )
                 }
                 catch (err) {
                     throwIfOtherException(err)
@@ -437,7 +440,11 @@ export function createEndpointHandler(
             bodyParsingAndValidationHandler = async (message, state) => {
                 let files
                 try {
-                    files = await parseMultipart(message, endpoint.files)
+                    files = await parseMultipart(
+                        message,
+                        endpoint.files,
+                        state.config?.multipart
+                    )
                 }
                 catch (err) {
                     throwIfOtherException(err)
@@ -473,7 +480,7 @@ export function createEndpointHandler(
     }
     else if (endpoint.input !== undefined) {
         bodyParsingAndValidationHandler = async (message, state) => {
-            const parseResult = await parseJSONStream(message)
+            const parseResult = await parseJSONStream(message, state.config?.json)
             if (!parseResult.ok) {
                 switch (parseResult.tag) {
                     case 'MaximumSizeExceeded':
