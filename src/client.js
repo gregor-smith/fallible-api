@@ -31,12 +31,20 @@ function outputDecodeError(response, exception) {
 }
 
 
+function buildGETURL(url, input) {
+    if (input === undefined) {
+        return url
+    }
+    const query = encodeURIComponent(JSON.stringify(input))
+    return `${url}?${JSON_KEY}=${query}`
+}
+
+
 export function buildURL(schema, endpoint, input) {
     let url = schema.prefix + endpoint
     const { method } = schema.endpoints[endpoint]
-    if ((method === undefined || method === 'GET') && input !== undefined) {
-        const query = encodeURIComponent(JSON.stringify(input))
-        url = `${url}?${JSON_KEY}=${query}`
+    if (method === undefined || method === 'GET') {
+        url = buildGETURL(url, input)
     }
     return url
 }
@@ -57,10 +65,7 @@ export async function fetchEndpoint(schema, endpoint, { input, files, signal }) 
     let body
 
     if (method === undefined || method === 'GET') {
-        if (input !== undefined) {
-            const query = encodeURIComponent(JSON.stringify(input))
-            url = `${url}?${JSON_KEY}=${query}`
-        }
+        url = buildGETURL(url, input)
     }
     else if (files !== undefined) {
         body = new FormData()
@@ -155,6 +160,7 @@ export async function fetchEndpoint(schema, endpoint, { input, files, signal }) 
             if (!res.mimetype.guard(parsed.type)) {
                 return unexpectedContentTypeError(response)
             }
+            // TODO: return web stream
             let data
             try {
                 data = await response.blob()
@@ -167,6 +173,8 @@ export async function fetchEndpoint(schema, endpoint, { input, files, signal }) 
                 data
             })
         }
+        default:
+            throw new Error('Unexpected response type')
     }
 }
 
