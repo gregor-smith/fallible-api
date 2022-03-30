@@ -71,7 +71,8 @@ export type BinaryResponse = {
 export type Response = HTMLResponse | JSONResponse | BinaryResponse
 export type Responses = { [S in Status]?: Response }
 
-export type WebsocketCommunication = {
+export type WebSocketCommunication = {
+    // TODO: allow non-JSON messages
     up: Runtype
     down: Runtype
 }
@@ -119,25 +120,25 @@ type EndpointBase = {
 export type NonBodyEndpoint = EndpointBase & {
     method?: GETMethod
 }
-export type WebsocketEndpoint = NonBodyEndpoint & {
-    websocket: WebsocketCommunication
+export type WebSocketEndpoint = NonBodyEndpoint & {
+    websocket: WebSocketCommunication
 }
 export type BodyEndpoint = EndpointBase & {
     method: BodyMethod
     files?: FilesDefinition
 }
 export type FetchEndpoint = NonBodyEndpoint | BodyEndpoint
-export type Endpoint = WebsocketEndpoint | FetchEndpoint
+export type Endpoint = WebSocketEndpoint | FetchEndpoint
 
 export type Endpoints = Record<string, Endpoint>
-export type ExtractWebsocketEndpointNames<T extends Endpoints> = {
-    [K in keyof T]: T[K] extends WebsocketEndpoint
+export type ExtractWebSocketEndpointNames<T extends Endpoints> = {
+    [K in keyof T]: T[K] extends WebSocketEndpoint
         ? K
         : never
 }[keyof T]
-export type ExtractWebsocketEndpoints<T extends Endpoints> = Pick<
+export type ExtractWebSocketEndpoints<T extends Endpoints> = Pick<
     T,
-    ExtractWebsocketEndpointNames<T>
+    ExtractWebSocketEndpointNames<T>
 >
 
 export type Schema = {

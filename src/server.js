@@ -1,9 +1,8 @@
 import { error, ok } from 'fallible'
 import {
-    composeMessageHandlers,
-    composeResultMessageHandlers,
-    messageIsWebSocketRequest,
-    parseContentTypeHeader,
+    ResultMessageHandlerComposer,
+    headersIndicateWebSocketRequest,
+    parseCharSetContentTypeHeader,
     parseJSONStream,
     parseJSONString,
     parseMultipartRequest,
@@ -77,7 +76,7 @@ function isUTF8JSONContentTypeHeader(header) {
     if (header === undefined) {
         return false
     }
-    const contentType = parseContentTypeHeader(header)
+    const contentType = parseCharSetContentTypeHeader(header)
     return contentType !== undefined
         && contentType.type === 'application/json'
         && isUTF8Charset(contentType.characterSet)
@@ -85,9 +84,14 @@ function isUTF8JSONContentTypeHeader(header) {
 
 
 function jsonOnOpenCallback(onOpen) {
-    return async function * () {
-        for await (const value of onOpen()) {
-            yield JSON.stringify(value)
+    return async function * (uuid) {
+        const iterator = onOpen(uuid)
+        while (true) {
+            const result = await iterator.next()
+            if (result.done) {
+                return result.value
+            }
+            yield JSON.stringify(result.value)
         }
     }
 }
@@ -113,10 +117,15 @@ function messageToResult(data, validator) {
 
 
 function jsonOnMessageCallback(onMessage, validator) {
-    return async function * (data) {
+    return async function * (data, uuid) {
         const result = messageToResult(data, validator)
-        for await (const value of onMessage(result)) {
-            yield JSON.stringify(value)
+        const iterator = onMessage(result, uuid)
+        while (true) {
+            const result = await iterator.next()
+            if (result.done) {
+                return result.value
+            }
+            yield JSON.stringify(result.value)
         }
     }
 }
@@ -151,15 +160,15 @@ function throwIfOtherException(exception) {
 }
 
 
-function checkUpgradeForNoResponsesWebsocketEndpoint(isWebsocketRequest) {
-    if (!isWebsocketRequest) {
+function checkUpgradeForNoResponsesWebSocketEndpoint(isLikelyWebSocketRequest) {
+    if (!isLikelyWebSocketRequest) {
         throw new InternalException({ tag: 'UpgradeRequired' })
     }
 }
 
 
-function checkUpgradeForNonWebsocketEndpoint(isWebsocketRequest) {
-    if (isWebsocketRequest) {
+function checkUpgradeForNonWebSocketEndpoint(isLikelyWebSocketRequest) {
+    if (isLikelyWebSocketRequest) {
         throw new InternalException({ tag: 'UpgradeDenied' })
     }
 }
@@ -182,8 +191,8 @@ function checkAuthForOptionalAuthEndpoint(headers) {
 }
 
 
-function checkAcceptForEndpointWithResponses(headers, isWebsocketRequest, matchContentType) {
-    if (isWebsocketRequest) {
+function checkAcceptForEndpointWithResponses(headers, isLikelyWebSocketRequest, matchContentType) {
+    if (isLikelyWebSocketRequest) {
         return
     }
     if (headers['Accept'] === undefined
@@ -219,7 +228,10 @@ function getContentLength(headers) {
     }
     const length = parseContentLengthHeader(headers['Content-Length'])
     if (length === undefined) {
-        throw new InternalException({ tag: 'InvalidContentLengthHeader' })
+        throw new InternalException({
+            tag: 'InvalidContentLengthHeader',
+            header: headers['Content-Length']
+        })
     }
     return length
 }
@@ -267,15 +279,12 @@ function checkContentForBodyEndpointWithInputButNoFiles(headers, config) {
 }
 
 
-function noBodyParsingHandler(_, state) {
-    return okResponse(state)
-}
-
-
 async function parseMultipart(message, files, config) {
     const parseResult = await parseMultipartRequest(message, config)
     if (!parseResult.ok) {
         switch (parseResult.tag) {
+            case 'InvalidMultipartContentTypeHeader':
+                throw new InternalException({ tag: 'InvalidContentTypeHeader' })
             case 'RequestAborted':
                 throw new InternalException({ tag: 'MultipartStreamClosed' })
             case 'BelowMinimumFileSize':
@@ -340,11 +349,11 @@ export function createEndpointHandler(
     let checkUpgrade
     if ('websocket' in endpoint) {
         if (!hasResponses) {
-            checkUpgrade = checkUpgradeForNoResponsesWebsocketEndpoint
+            checkUpgrade = checkUpgradeForNoResponsesWebSocketEndpoint
         }
     }
     else {
-        checkUpgrade = checkUpgradeForNonWebsocketEndpoint
+        checkUpgrade = checkUpgradeForNonWebSocketEndpoint
     }
 
     let checkAuth
@@ -390,20 +399,20 @@ export function createEndpointHandler(
     }
 
     const headersHandler = (message, state) => {
-        if (state.method !== method) {
+        if (message.method !== method) {
             return errorResponse({
                 tag: 'WrongMethod',
-                method: state.method
+                method: message.method
             })
         }
 
-        const isWebsocketRequest = messageIsWebSocketRequest(message)
+        const isLikelyWebSocketRequest = headersIndicateWebSocketRequest(message.headers)
 
         try {
-            checkUpgrade?.(isWebsocketRequest)
-            checkAuth?.(state.headers, state.cookies)
-            checkAccept?.(state.headers, isWebsocketRequest, contentTypeMatcher)
-            checkContent?.(state.headers, state.config)
+            checkUpgrade?.(isLikelyWebSocketRequest)
+            checkAuth?.(message.headers, state.cookies)
+            checkAccept?.(message.headers, isLikelyWebSocketRequest, contentTypeMatcher)
+            checkContent?.(message.headers, state.config)
         }
         catch (err) {
             throwIfOtherException(err)
@@ -412,29 +421,27 @@ export function createEndpointHandler(
 
         return okResponse({
             ...state,
-            isWebsocketRequest,
+            isLikelyWebSocketRequest,
             token: state.cookies[AUTH_COOKIE_NAME]
         })
     }
 
     let bodyParsingAndValidationHandler
     if (method === 'GET') {
-        if (endpoint.input === undefined) {
-            bodyParsingAndValidationHandler = noBodyParsingHandler
-        }
-        else {
+        if (endpoint.input !== undefined) {
             bodyParsingAndValidationHandler = (_, state) => {
-                if (state.url.query[JSON_KEY] === undefined) {
+                const jsonParam = state.url.searchParams.get(JSON_KEY)
+                if (jsonParam === null) {
                     return errorResponse({ tag: 'URLQueryRequired' })
                 }
                 let json
                 try {
-                    json = parseJSONString(state.url.query[JSON_KEY])
+                    json = parseJSONString(jsonParam)
                 }
                 catch {
                     return errorResponse({
                         tag: 'URLQueryMalformed',
-                        query: state.url.query[JSON_KEY]
+                        query: jsonParam
                     })
                 }
                 const result = endpoint.input.validate(json)
@@ -540,9 +547,6 @@ export function createEndpointHandler(
             })
         }
     }
-    else {
-        bodyParsingAndValidationHandler = noBodyParsingHandler
-    }
 
     const finalHandler = (_, state) => {
         if (state.status === 101) {
@@ -574,15 +578,14 @@ export function createEndpointHandler(
         }
     }
 
-    return composeMessageHandlers([
-        composeResultMessageHandlers([
-            headersHandler,
-            sessionHandler,
-            bodyParsingAndValidationHandler,
-        ]),
-        bodyHandler,
-        finalHandler
-    ])
+    let composer = new ResultMessageHandlerComposer(headersHandler)
+        .intoResultHandler(sessionHandler)
+    if (bodyParsingAndValidationHandler !== undefined) {
+        composer = composer.intoResultHandler(bodyParsingAndValidationHandler)
+    }
+    return composer.intoHandler(bodyHandler)
+        .intoHandler(finalHandler)
+        .build()
 }
 
 
@@ -592,7 +595,7 @@ export function createSchemaHandler(schema, handlers) {
     const escaped = schema.prefix.replace(regexEscapePattern, '\\$&')
     const prefixPattern = new RegExp(`^${escaped}(.+)`)
     return (message, state, sockets) => {
-        const path = prefixPattern.exec(state.url.path)?.[1]
+        const path = prefixPattern.exec(state.url.pathname)?.[1]
         return handlers[path]?.(message, state, sockets) ?? response()
     }
 }

@@ -1,13 +1,17 @@
-import type { Awaitable, Result } from 'fallible'
+import type { Result } from 'fallible'
 import type {
     MessageHandler,
     Header,
     Response as FallibleResponse,
     StreamBody,
-    AwaitableIterable
+    AwaitableIterator,
+    WebSocketCloseInfo,
+    WebSocketCloseCallback,
+    WebSocketSendErrorCallback
 } from 'fallible-server'
 import type { Failure, Runtype, Static } from 'runtypes'
 
+import type { JSON_KEY } from './constants.js'
 import type {
     BodyEndpoint,
     Schema as Sch,
@@ -15,7 +19,7 @@ import type {
     FileDefinition,
     Method,
     Response,
-    WebsocketEndpoint,
+    WebSocketEndpoint,
     Endpoint as EP,
     HasAnyResponse,
     NonBodyEndpoint,
@@ -27,13 +31,17 @@ import type {
 } from './schema.js'
 
 
+export interface EndpointHandlerPreStateURLSearchParams {
+    get(key: JSON_KEY): string | null
+}
+
+export interface EndpointHandlerPreStateURL {
+    pathname: string
+    searchParams: EndpointHandlerPreStateURLSearchParams
+}
+
 export type EndpointHandlerPreState = {
-    url: {
-        path: string
-        query: Record<string, string>
-    }
-    method: Method
-    headers: Record<string, string>
+    url: EndpointHandlerPreStateURL
     cookies: Record<string, string>
     config?: {
         multipart?: {
@@ -51,24 +59,25 @@ export type EndpointHandlerPreState = {
     }
 }
 
+
 export type BodyHandlerResponse<Status extends number, Body> = {
     status: Status
     body: Body
     headers?: Record<string, Header>
 }
 
-export type WebsocketHandlerResponse<In, Out> = {
+export type WebSocketHandlerResponse<In, Out> = {
     status: 101
     body: {
-        onOpen: WebsocketOpenCallback<Out>
-        onMessage?: WebsocketMessageCallback<In, Out>
-        onClose?: WebsocketCloseCallback
-        onSendError?: WebsocketSendErrorCallback
+        onOpen: WebSocketOpenCallback<Out>
+        onMessage?: WebSocketMessageCallback<In, Out>
+        onClose?: WebSocketCloseCallback
+        onSendError?: WebSocketSendErrorCallback
     }
     headers?: undefined
 }
 
-export type WebsocketMessageError =
+export type WebSocketMessageError =
     | {
         tag: 'InvalidMessage'
         data: string
@@ -83,15 +92,13 @@ export type WebsocketMessageError =
         data: Buffer | Buffer[] | ArrayBuffer
     }
 
-export type WebsocketOpenCallback<T> = () => AwaitableIterable<T>
-export type WebsocketMessageCallback<In, Out> = (
-    message: Result<In, WebsocketMessageError>
-) => AwaitableIterable<Out>
-export type WebsocketCloseCallback = (code: number, reason: string) => Awaitable<void>
-export type WebsocketSendErrorCallback = (
-    message: string | Buffer | Buffer[] | ArrayBuffer,
-    error: globalThis.Error
-) => Awaitable<void>
+export type WebSocketOpenCallback<T> = (
+    socketUUID: string
+) => AwaitableIterator<T, WebSocketCloseInfo | void>
+export type WebSocketMessageCallback<In, Out> = (
+    message: Result<In, WebSocketMessageError>,
+    socketUUID: string
+) => AwaitableIterator<Out, WebSocketCloseInfo | void>
 
 
 export type WrongMethodError = {
@@ -125,6 +132,10 @@ export type InvalidContentTypeHeaderError = {
 export type UnsupportedContentEncodingHeaderError = {
     tag: 'UnsupportedContentEncodingHeader'
     header: string
+}
+export type InvalidContentLengthHeaderError = {
+    tag: 'InvalidContentLengthHeader'
+    header?: string
 }
 
 export type URLQueryRequiredError = {
@@ -197,7 +208,7 @@ export type JSONInputInvalidError = {
 
 export type HeadersHandlerError<Endpoint extends EP> =
     | WrongMethodError
-    | (Endpoint extends WebsocketEndpoint
+    | (Endpoint extends WebSocketEndpoint
         ? (HasAnyResponse<Endpoint['responses']> extends true
             ? never
             : UpgradeRequiredError)
@@ -213,9 +224,17 @@ export type HeadersHandlerError<Endpoint extends EP> =
         : never)
     | (Endpoint extends BodyEndpoint
         ? (Endpoint['files'] extends FilesDefinition
-            ? InvalidContentTypeHeaderError | UnsupportedContentEncodingHeaderError
+            ? (
+                | InvalidContentTypeHeaderError
+                | UnsupportedContentEncodingHeaderError
+                | InvalidContentLengthHeaderError
+            )
             : (Endpoint['input'] extends Runtype
-                ? InvalidContentTypeHeaderError | UnsupportedContentEncodingHeaderError
+                ? (
+                    | InvalidContentTypeHeaderError
+                    | UnsupportedContentEncodingHeaderError
+                    | InvalidContentLengthHeaderError
+                )
                 : never))
         : never)
 
@@ -236,6 +255,7 @@ export type BodyParsingAndValidationHandlerError<Endpoint extends EP, T> =
                     | MultipartFileBelowMinimumSizeError
                     | MultipartMaximumFileCountExceededError
                     | MultipartMaximumFileSizeExceededError
+                    | MultipartMaximumTotalFileSizeExceededError
                     | MultipartMaximumFieldsCountExceededError
                     | MultipartMaximumFieldsSizeExceededError
                     | MultipartUnknownParseError
@@ -260,7 +280,7 @@ export type BodyParsingAndValidationHandlerError<Endpoint extends EP, T> =
 export type InitialHandlerState<Endpoint extends EP, T> =
     & T
     & {
-        isWebsocketRequest: boolean
+        isWebSocketRequest: boolean
         token: Endpoint['auth'] extends 'required'
             ? string
             : (Endpoint['auth'] extends 'optional'
@@ -309,8 +329,8 @@ type BodyHandlerResponses<T extends Responses> = {
 }[keyof T]
 
 export type BodyHandlerState<Endpoint extends EP> =
-    | (Endpoint extends WebsocketEndpoint
-        ? WebsocketHandlerResponse<Static<Endpoint['websocket']['up']>, Static<Endpoint['websocket']['down']>>
+    | (Endpoint extends WebSocketEndpoint
+        ? WebSocketHandlerResponse<Static<Endpoint['websocket']['up']>, Static<Endpoint['websocket']['down']>>
         : never)
     | BodyHandlerResponses<Endpoint['responses']>
 

@@ -1,5 +1,5 @@
 import { error, ok } from 'fallible'
-import { parseContentTypeHeader } from 'fallible-server/general-utils'
+import { parseCharSetContentTypeHeader } from 'fallible-server/utils'
 
 import { CSRF_HEADER, JSON_KEY } from './constants.js'
 
@@ -94,7 +94,7 @@ export async function fetchEndpoint(schema, endpoint, { input, files, signal }) 
 
     let response
     try {
-        response = await fetch(url, { method, headers, credentials, signal })
+        response = await fetch(url, { method, body, headers, credentials, signal })
     }
     catch (exception) {
         return networkOrAbortedError(signal, exception)
@@ -109,7 +109,7 @@ export async function fetchEndpoint(schema, endpoint, { input, files, signal }) 
     if (contentType === null) {
         return unexpectedContentTypeError(response)
     }
-    const parsed = parseContentTypeHeader(contentType)
+    const parsed = parseCharSetContentTypeHeader(contentType)
     if (parsed === undefined || parsed.characterSet !== 'utf-8') {
         return unexpectedContentTypeError(response)
     }
@@ -179,7 +179,7 @@ export async function fetchEndpoint(schema, endpoint, { input, files, signal }) 
 }
 
 
-export class ValidatedWebsocket {
+export class ValidatedWebSocket {
     constructor(socket, validator) {
         this.#socket = socket
         this.#messageListeners = []
@@ -258,7 +258,7 @@ export class ValidatedWebsocket {
 }
 
 
-export function connectWebsocketEndpoint(
+export function connectWebSocketEndpoint(
     schema,
     endpointName,
     {
@@ -289,7 +289,7 @@ export function connectWebsocketEndpoint(
             socket.removeEventListener('close', onClose)
             socket.removeEventListener('open', onOpen)
             const endpoint = schema.endpoints[endpointName]
-            const wrapper = new ValidatedWebsocket(socket, endpoint.websocket.down)
+            const wrapper = new ValidatedWebSocket(socket, endpoint.websocket.down)
             resolve(ok(wrapper))
         }
 

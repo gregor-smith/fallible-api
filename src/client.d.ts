@@ -9,9 +9,9 @@ import type {
     Responses,
     FilesDefinition,
     FilesData,
-    WebsocketEndpoint,
-    WebsocketCommunication,
-    ExtractWebsocketEndpointNames,
+    WebSocketEndpoint,
+    WebSocketCommunication,
+    ExtractWebSocketEndpointNames,
     Response,
     BodyMethod,
     JSONResponse,
@@ -124,35 +124,35 @@ export declare function fetchEndpoint<
 ): Promise<FetchResult<Schema['endpoints'][Endpoint]['responses'], Abortable>>
 
 
-export type WebsocketConnectError<Abortable extends boolean> =
+export type WebSocketConnectError<Abortable extends boolean> =
     | NetworkError
     | (Abortable extends true ? AbortedError : never)
 
 export type ConnectResult<Endpoint extends EP, Abortable extends boolean> =
-    Endpoint extends WebsocketEndpoint
-        ? WebsocketConnectResult<Endpoint, Abortable>
+    Endpoint extends WebSocketEndpoint
+        ? WebSocketConnectResult<Endpoint, Abortable>
         : never
 
-export type WebsocketConnectResult<Endpoint extends WebsocketEndpoint, Abortable extends boolean> =
+export type WebSocketConnectResult<Endpoint extends WebSocketEndpoint, Abortable extends boolean> =
     Result<
-        ValidatedWebsocket<Endpoint['websocket']>,
-        WebsocketConnectError<Abortable>
+        ValidatedWebSocket<Endpoint['websocket']>,
+        WebSocketConnectError<Abortable>
     >
 
-export type WebsocketMessageError =
+export type WebSocketMessageError =
     | { tag: 'InvalidTypeError', message: ArrayBuffer | Blob }
     | { tag: 'InvalidJSONError', message: string }
     | { tag: 'ValidationError', result: Failure, message: unknown }
 
-export type WebsocketMessageResult<T> = Result<T, WebsocketMessageError>
+export type WebSocketMessageResult<T> = Result<T, WebSocketMessageError>
 
 
 export type CloseListener = (event: CloseEvent) => void
 
-export type MessageListener<T> = (result: WebsocketMessageResult<T>) => void
+export type MessageListener<T> = (result: WebSocketMessageResult<T>) => void
 
 
-export declare class ValidatedWebsocket<WS extends WebsocketCommunication> {
+export declare class ValidatedWebSocket<WS extends WebSocketCommunication> {
     public readonly validator: WS['down']
     public readonly state: number
     public readonly buffered: number
@@ -171,7 +171,7 @@ export declare class ValidatedWebsocket<WS extends WebsocketCommunication> {
 }
 
 
-export type ConnectWebsocketArguments<Abortable extends boolean> = {
+export type ConnectWebSocketArguments<Abortable extends boolean> = {
     host?: string
     tls?: boolean
 } & (
@@ -181,19 +181,19 @@ export type ConnectWebsocketArguments<Abortable extends boolean> = {
 )
 
 
-export declare function connectWebsocketEndpoint<
+export declare function connectWebSocketEndpoint<
     Schema extends Sch,
-    Endpoint extends ExtractWebsocketEndpointNames<Schema['endpoints']>
+    Endpoint extends ExtractWebSocketEndpointNames<Schema['endpoints']>
 >(
     schema: Schema,
     endpointName: Endpoint,
-    args?: ConnectWebsocketArguments<false>
+    args?: ConnectWebSocketArguments<false>
 ): Awaitable<ConnectResult<Schema['endpoints'][Endpoint], false>>
-export declare function connectWebsocketEndpoint<
+export declare function connectWebSocketEndpoint<
     Schema extends Sch,
-    Endpoint extends ExtractWebsocketEndpointNames<Schema['endpoints']>
+    Endpoint extends ExtractWebSocketEndpointNames<Schema['endpoints']>
 >(
     schema: Schema,
     endpointName: Endpoint,
-    args: ConnectWebsocketArguments<true>
+    args: ConnectWebSocketArguments<true>
 ): Awaitable<ConnectResult<Schema['endpoints'][Endpoint], true>>
