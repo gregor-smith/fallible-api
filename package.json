@@ -32,8 +32,8 @@
   },
   "dependencies": {
     "@hapi/accept": "^5.0.2",
-    "fallible": "link:./../fallible",
-    "fallible-server": "link:./../fallible-server",
+    "fallible": "https://github.com/gregor-smith/fallible.git",
+    "fallible-server": "https://github.com/gregor-smith/fallible-server.git",
     "runtypes": "^6.5"
   },
   "scripts": {
