@@ -32,9 +32,9 @@
   },
   "dependencies": {
     "@hapi/accept": "^5.0.2",
-    "fallible": "https://github.com/gregor-smith/fallible.git",
-    "fallible-server": "https://github.com/gregor-smith/fallible-server.git",
-    "runtypes": "^6.5"
+    "fallible": "https://github.com/gregor-smith/fallible.git#v1.0.0",
+    "fallible-server": "https://github.com/gregor-smith/fallible-server.git#v0.2.1-alpha",
+    "runtypes": "^6.5.1"
   },
   "scripts": {
     "typecheck": "tsc"

@@ -57,10 +57,7 @@ export async function fetchEndpoint(schema, endpoint, { input, files, signal }) 
 
     const { method, auth, responses } = schema.endpoints[endpoint]
 
-    const headers = {
-        'Accept': 'application/json',
-        'Accept-Charset': 'utf-8'
-    }
+    const headers = {}
     let url = schema.prefix + endpoint
     let body
 
@@ -179,7 +176,11 @@ export async function fetchEndpoint(schema, endpoint, { input, files, signal }) 
 }
 
 
+// TODO: use EventTarget
 export class ValidatedWebSocket {
+    #socket
+    #messageListeners
+
     constructor(socket, validator) {
         this.#socket = socket
         this.#messageListeners = []
@@ -263,7 +264,7 @@ export function connectWebSocketEndpoint(
     endpointName,
     {
         host = location.host,
-        tls = true,
+        tls = location.protocol === 'https:',
         signal
     } = {}
 ) {

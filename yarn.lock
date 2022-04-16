@@ -22,20 +22,20 @@
   resolved "https://registry.yarnpkg.com/@hapi/hoek/-/hoek-9.2.1.tgz#9551142a1980503752536b5050fd99f4a7f13b17"
   integrity sha512-gfta+H8aziZsm8pZa0vj04KO6biEiisppNgA1kbJvFrrWu9Vm7eaUEy76DIxsuTaWvti5fkJVhllWc6ZTE+Mdw==
 
-"@types/node@*", "@types/node@^17.0.17":
+"@types/node@*":
   version "17.0.23"
   resolved "https://registry.yarnpkg.com/@types/node/-/node-17.0.23.tgz#3b41a6e643589ac6442bdbd7a4a3ded62f33f7da"
   integrity sha512-UxDxWn7dl97rKVeVS61vErvw086aCYhDLyvRQZ5Rk65rZKepaFdm53GeqXaKBuOhED4e9uWq34IC3TdSdJJ2Gw==
 
-"@types/secure-json-parse@^1.0.2":
-  version "1.0.3"
-  resolved "https://registry.yarnpkg.com/@types/secure-json-parse/-/secure-json-parse-1.0.3.tgz#66166ad5cead1aca15559b30a074723d64feafd2"
-  integrity sha512-q+pIm0NCIAeaBMfrAcJE3fa4VYKNGOlA96MOitTJzs85/UORxAVX9Q/+kue31Al5j53Aie8b+kOHVj8MvAIn0A==
+"@types/node@^17.0.23":
+  version "17.0.24"
+  resolved "https://registry.yarnpkg.com/@types/node/-/node-17.0.24.tgz#20ba1bf69c1b4ab405c7a01e950c4f446b05029f"
+  integrity sha512-aveCYRQbgTH9Pssp1voEP7HiuWlD2jW2BO56w+bVrJn04i61yh6mRfoKO6hEYQD9vF+W8Chkwc6j1M36uPkx4g==
 
-"@types/ws@^7.4.0":
-  version "7.4.7"
-  resolved "https://registry.yarnpkg.com/@types/ws/-/ws-7.4.7.tgz#f7c390a36f7a0679aa69de2d501319f4f8d9b702"
-  integrity sha512-JQbbmxZTZehdc2iszGKs5oC3NFnjeay7mtAWrdt7qNtAVK0g19muApzAy4bm9byz79xa2ZnO/BOBC2R8RC5Lww==
+"@types/ws@^8.5.3":
+  version "8.5.3"
+  resolved "https://registry.yarnpkg.com/@types/ws/-/ws-8.5.3.tgz#7d25a1ffbecd3c4f2d35068d0b283c037003274d"
+  integrity sha512-6YOoWjruKj1uLf3INHH7D3qTXwFfEsg1kf3c0uDdSBJwfa/llkwIjrAGV7j7mVgGNbzTQ3HiHKKDXl6bJPD97w==
   dependencies:
     "@types/node" "*"
 
@@ -52,21 +52,21 @@ dezalgo@1.0.3:
     asap "^2.0.0"
     wrappy "1"
 
-"fallible-server@https://github.com/gregor-smith/fallible-server.git":
-  version "0.1.0"
-  resolved "https://github.com/gregor-smith/fallible-server.git#332a49b76b538778875a9cd3836c0a4eed5e1e91"
+"fallible-server@https://github.com/gregor-smith/fallible-server.git#v0.2.1-alpha":
+  version "0.2.1"
+  resolved "https://github.com/gregor-smith/fallible-server.git#24e899f92f71e6b86fb280f3727c0a0d788de131"
   dependencies:
-    "@types/node" "^17.0.17"
-    "@types/secure-json-parse" "^1.0.2"
-    "@types/ws" "^7.4.0"
-    fallible "https://github.com/gregor-smith/fallible.git"
+    "@types/node" "^17.0.23"
+    "@types/ws" "^8.5.3"
+    fallible "https://github.com/gregor-smith/fallible.git#v1.0.0"
     formidable v3
-    secure-json-parse "^2.3.1"
-    ws "^7.4.3"
+    headers-polyfill "^3.0.7"
+    secure-json-parse "^2.4.0"
+    ws "^7.4.6"
 
-"fallible@https://github.com/gregor-smith/fallible.git":
-  version "0.1.0"
-  resolved "https://github.com/gregor-smith/fallible.git#4fe10a151291b7bf80306ac53d665af4dfd5fd82"
+"fallible@https://github.com/gregor-smith/fallible.git#v1.0.0":
+  version "1.0.0"
+  resolved "https://github.com/gregor-smith/fallible.git#890849b057f5b3b472cb58fa9fe2bdffe06c2a48"
 
 formidable@v3:
   version "3.2.1"
@@ -76,6 +76,11 @@ formidable@v3:
     dezalgo "1.0.3"
     hexoid "1.0.0"
     once "1.4.0"
+
+headers-polyfill@^3.0.7:
+  version "3.0.7"
+  resolved "https://registry.yarnpkg.com/headers-polyfill/-/headers-polyfill-3.0.7.tgz#725c4f591e6748f46b036197eae102c92b959ff4"
+  integrity sha512-JoLCAdCEab58+2/yEmSnOlficyHFpIl0XJqwu3l+Unkm1gXpFUYsThz6Yha3D6tNhocWkCPfyW0YVIGWFqTi7w==
 
 hexoid@1.0.0:
   version "1.0.0"
@@ -89,12 +94,12 @@ once@1.4.0:
   dependencies:
     wrappy "1"
 
-runtypes@^6.5:
-  version "6.5.0"
-  resolved "https://registry.yarnpkg.com/runtypes/-/runtypes-6.5.0.tgz#019c70c8f20659ca0339c95cb1e881573ba30d82"
-  integrity sha512-+jK1mRi6KvZ9m+LGxCYUY9CJMxCLz8LDRiGtBrq5UKvgOv2MocrXMc2D1dDkY7gRR8BzfG64yTsGdS2aC7arpQ==
+runtypes@^6.5.1:
+  version "6.5.1"
+  resolved "https://registry.yarnpkg.com/runtypes/-/runtypes-6.5.1.tgz#125d9a50c3b7dd45db6e47d42bb1c411b4f3f008"
+  integrity sha512-vYxcAYzC868ZY4BgazBomT9dpWHZnG3CH++5mhlVKGKqf2MzON4itmEmQt3uGTUOyipeUn7GALAN0nQhjPNRtA==
 
-secure-json-parse@^2.3.1:
+secure-json-parse@^2.4.0:
   version "2.4.0"
   resolved "https://registry.yarnpkg.com/secure-json-parse/-/secure-json-parse-2.4.0.tgz#5aaeaaef85c7a417f76271a4f5b0cc3315ddca85"
   integrity sha512-Q5Z/97nbON5t/L/sH6mY2EacfjVGwrCcSi5D3btRO2GZ8pf1K1UN7Z9H5J57hjVU2Qzxr1xO+FmBhOvEkzCMmg==
@@ -109,7 +114,7 @@ wrappy@1:
   resolved "https://registry.yarnpkg.com/wrappy/-/wrappy-1.0.2.tgz#b5243d8f3ec1aa35f1364605bc0d1036e30ab69f"
   integrity sha1-tSQ9jz7BqjXxNkYFvA0QNuMKtp8=
 
-ws@^7.4.3:
+ws@^7.4.6:
   version "7.5.7"
   resolved "https://registry.yarnpkg.com/ws/-/ws-7.5.7.tgz#9e0ac77ee50af70d58326ecff7e85eb3fa375e67"
   integrity sha512-KMvVuFzpKBuiIXW3E4u3mySRO2/mCHSyZDJQM5NQ9Q9KHWHWh0NHgfbRMLLrceUK5qAL4ytALJbpRMjixFZh8A==

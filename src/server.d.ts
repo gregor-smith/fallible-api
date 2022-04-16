@@ -1,13 +1,15 @@
 import type { Result } from 'fallible'
 import type {
     MessageHandler,
-    Header,
+    Headers,
     Response as FallibleResponse,
     StreamBody,
     AwaitableIterator,
     WebSocketCloseInfo,
     WebSocketCloseCallback,
-    WebSocketSendErrorCallback
+    WebSocketSendErrorCallback,
+    ParseWebSocketHeadersError,
+    ParsedWebSocketHeaders
 } from 'fallible-server'
 import type { Failure, Runtype, Static } from 'runtypes'
 
@@ -63,18 +65,19 @@ export type EndpointHandlerPreState = {
 export type BodyHandlerResponse<Status extends number, Body> = {
     status: Status
     body: Body
-    headers?: Record<string, Header>
+    headers?: Headers
 }
 
 export type WebSocketHandlerResponse<In, Out> = {
-    status: 101
-    body: {
-        onOpen: WebSocketOpenCallback<Out>
-        onMessage?: WebSocketMessageCallback<In, Out>
-        onClose?: WebSocketCloseCallback
-        onSendError?: WebSocketSendErrorCallback
-    }
-    headers?: undefined
+    accept: string
+    protocol?: string
+    maximumMessageSize?: number
+    uuid?: string
+    onOpen: WebSocketOpenCallback<Out>
+    onMessage?: WebSocketMessageCallback<In, Out>
+    onClose?: WebSocketCloseCallback
+    onSendError?: WebSocketSendErrorCallback
+    headers?: Headers
 }
 
 export type WebSocketMessageError =
@@ -108,22 +111,15 @@ export type WrongMethodError = {
 export type UpgradeDeniedError = {
     tag: 'UpgradeDenied'
 }
-export type UpgradeRequiredError = {
-    tag: 'UpgradeRequired'
+export type UpgradeError = {
+    tag: 'UpgradeError'
+    error: ParseWebSocketHeadersError
 }
 export type CSRFHeaderRequiredError = {
     tag: 'CSRFHeaderRequired'
 }
 export type AuthRequiredError = {
     tag: 'AuthRequired'
-}
-export type InvalidAcceptHeaderError = {
-    tag: 'InvalidAcceptHeader'
-    header?: string
-}
-export type InvalidAcceptCharsetHeaderError = {
-    tag: 'InvalidAcceptCharsetHeader'
-    header?: string
 }
 export type InvalidContentTypeHeaderError = {
     tag: 'InvalidContentTypeHeader'
@@ -211,16 +207,13 @@ export type HeadersHandlerError<Endpoint extends EP> =
     | (Endpoint extends WebSocketEndpoint
         ? (HasAnyResponse<Endpoint['responses']> extends true
             ? never
-            : UpgradeRequiredError)
+            : UpgradeError)
         : UpgradeDeniedError)
     | (Endpoint['auth'] extends 'required' | 'optional'
         ? CSRFHeaderRequiredError
         : never)
     | (Endpoint['auth'] extends 'required'
         ? AuthRequiredError
-        : never)
-    | (HasAnyResponse<Endpoint['responses']> extends true
-        ? InvalidAcceptHeaderError | InvalidAcceptCharsetHeaderError
         : never)
     | (Endpoint extends BodyEndpoint
         ? (Endpoint['files'] extends FilesDefinition
@@ -280,7 +273,11 @@ export type BodyParsingAndValidationHandlerError<Endpoint extends EP, T> =
 export type InitialHandlerState<Endpoint extends EP, T> =
     & T
     & {
-        isWebSocketRequest: boolean
+        isWebSocketRequest: Endpoint extends WebSocketEndpoint
+            ? (HasAnyResponse<Endpoint['responses']> extends true
+                ? Result<ParsedWebSocketHeaders, ParseWebSocketHeadersError>
+                : ParsedWebSocketHeaders)
+            : undefined
         token: Endpoint['auth'] extends 'required'
             ? string
             : (Endpoint['auth'] extends 'optional'

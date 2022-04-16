@@ -1,7 +1,7 @@
 import { error, ok } from 'fallible'
 import {
     ResultMessageHandlerComposer,
-    headersIndicateWebSocketRequest,
+    parseWebSocketHeaders,
     parseCharSetContentTypeHeader,
     parseJSONStream,
     parseJSONString,
@@ -9,10 +9,6 @@ import {
     parseContentLengthHeader,
     response
 } from 'fallible-server'
-import {
-    charsets as preferredCharsets,
-    mediaTypes as preferredContentTypes,
-} from '@hapi/accept'
 
 import { AUTH_COOKIE_NAME, CSRF_HEADER, JSON_KEY } from './constants.js'
 
@@ -27,51 +23,6 @@ function okResponse(state) {
 }
 
 
-function isJSONOrAnyContentType(contentType) {
-    switch (contentType) {
-        case 'application/json':
-        case '*/*':
-            return true
-        default:
-            return false
-    }
-}
-
-
-function isHTMLOrAnyContentType(contentType) {
-    switch (contentType) {
-        case 'text/html':
-        case '*/*':
-            return true
-        default:
-            return false
-    }
-}
-
-
-function isHTMLOrJSONOrAnyContentType(contentType) {
-    switch (contentType) {
-        case 'text/html':
-        case 'application/json':
-        case '*/*':
-            return true
-        default:
-            return false
-    }
-}
-
-
-function isUTF8Charset(charset) {
-    switch (charset) {
-        case 'utf-8':
-        case 'utf8':
-            return true
-        default:
-            return false
-    }
-}
-
-
 function isUTF8JSONContentTypeHeader(header) {
     if (header === undefined) {
         return false
@@ -79,7 +30,7 @@ function isUTF8JSONContentTypeHeader(header) {
     const contentType = parseCharSetContentTypeHeader(header)
     return contentType !== undefined
         && contentType.type === 'application/json'
-        && isUTF8Charset(contentType.characterSet)
+        && /^utf-?8$/.test(contentType.characterSet)
 }
 
 
@@ -131,16 +82,13 @@ function jsonOnMessageCallback(onMessage, validator) {
 }
 
 
-function websocketResponse(state, inValidator) {
+function webSocketResponse(state, inValidator) {
     return response({
         ...state,
-        body: {
-            ...state.body,
-            onOpen: jsonOnOpenCallback(state.body.onOpen),
-            onMessage: state.body.onMessage === undefined
-                ? undefined
-                : jsonOnMessageCallback(state.body.onMessage, inValidator)
-        }
+        onOpen: jsonOnOpenCallback(state.onOpen),
+        onMessage: state.onMessage === undefined
+            ? undefined
+            : jsonOnMessageCallback(state.onMessage, inValidator)
     })
 }
 
@@ -160,15 +108,23 @@ function throwIfOtherException(exception) {
 }
 
 
-function checkUpgradeForNoResponsesWebSocketEndpoint(isLikelyWebSocketRequest) {
-    if (!isLikelyWebSocketRequest) {
-        throw new InternalException({ tag: 'UpgradeRequired' })
+const checkUpgradeForWebSocketEndpointWithResponses = parseWebSocketHeaders
+
+
+function checkUpgradeForWebSocketEndpointWithNoResponses(headers) {
+    const result = parseWebSocketHeaders(headers)
+    if (!result.ok) {
+        throw new InternalException({ 
+            tag: 'UpgradeError', 
+            error: result.value 
+        })
     }
+    return result.value
 }
 
 
-function checkUpgradeForNonWebSocketEndpoint(isLikelyWebSocketRequest) {
-    if (isLikelyWebSocketRequest) {
+function checkUpgradeForNonWebSocketEndpoint(headers) {
+    if (headers['upgrade'] !== undefined) {
         throw new InternalException({ tag: 'UpgradeDenied' })
     }
 }
@@ -187,27 +143,6 @@ function checkAuthForRequiredAuthEndpoint(headers, cookies) {
 function checkAuthForOptionalAuthEndpoint(headers) {
     if (headers[CSRF_HEADER] === undefined) {
         throw new InternalException({ tag: 'CSRFHeaderRequired' })
-    }
-}
-
-
-function checkAcceptForEndpointWithResponses(headers, isLikelyWebSocketRequest, matchContentType) {
-    if (isLikelyWebSocketRequest) {
-        return
-    }
-    if (headers['Accept'] === undefined
-            || !preferredContentTypes(headers['Accept']).some(matchContentType)) {
-        throw new InternalException({
-            tag: 'InvalidAcceptHeader',
-            header: headers['Accept']
-        })
-    }
-    if (headers['Accept-Charset'] === undefined
-            || !preferredCharsets(headers['Accept-Charset']).some(isUTF8Charset)) {
-        throw new InternalException({
-            tag: 'InvalidAcceptCharsetHeader',
-            header: headers['Accept-Charset']
-        })
     }
 }
 
@@ -245,7 +180,6 @@ function checkContentForBodyEndpointWithFiles(headers, config) {
             header: headers['Content-Type']
         })
     }
-    const length = getContentLength(headers)
     if (config?.multipart === undefined) {
         return
     }
@@ -255,6 +189,7 @@ function checkContentForBodyEndpointWithFiles(headers, config) {
         maximumFileCount = Infinity,
         maximumFieldsSize = Infinity
     } = config.multipart
+    const length = getContentLength(headers)
     if (length < minimumFileSize) {
         throw new InternalException({ tag: 'MultipartFileBelowMinimumSize' })
     }
@@ -319,7 +254,10 @@ async function parseMultipart(message, files, config) {
             files: parseResult.value.files
         })
     }
-    return filesValidationResult.value
+    return {
+        files: filesValidationResult.value,
+        fields: parseResult.value.fields
+    }
 }
 
 
@@ -348,8 +286,11 @@ export function createEndpointHandler(
 
     let checkUpgrade
     if ('websocket' in endpoint) {
-        if (!hasResponses) {
-            checkUpgrade = checkUpgradeForNoResponsesWebSocketEndpoint
+        if (hasResponses) {
+            checkUpgrade = checkUpgradeForWebSocketEndpointWithResponses
+        }
+        else {
+            checkUpgrade = checkUpgradeForWebSocketEndpointWithNoResponses
         }
     }
     else {
@@ -368,22 +309,6 @@ export function createEndpointHandler(
         }
         default:
             throw new Error('Unexpected endpoint auth type')
-    }
-
-    let contentTypeMatcher
-    if (hasJSONResponse && !hasHTMLResponse) {
-        contentTypeMatcher = isJSONOrAnyContentType
-    }
-    else if (!hasJSONResponse && hasHTMLResponse) {
-        contentTypeMatcher = isHTMLOrAnyContentType
-    }
-    else {
-        contentTypeMatcher = isHTMLOrJSONOrAnyContentType
-    }
-
-    let checkAccept
-    if (hasResponses) {
-        checkAccept = checkAcceptForEndpointWithResponses
     }
 
     let checkContent
@@ -406,12 +331,10 @@ export function createEndpointHandler(
             })
         }
 
-        const isLikelyWebSocketRequest = headersIndicateWebSocketRequest(message.headers)
-
+        let webSocket
         try {
-            checkUpgrade?.(isLikelyWebSocketRequest)
+            webSocket = checkUpgrade?.(message.headers)
             checkAuth?.(message.headers, state.cookies)
-            checkAccept?.(message.headers, isLikelyWebSocketRequest, contentTypeMatcher)
             checkContent?.(message.headers, state.config)
         }
         catch (err) {
@@ -421,7 +344,7 @@ export function createEndpointHandler(
 
         return okResponse({
             ...state,
-            isLikelyWebSocketRequest,
+            webSocket,
             token: state.cookies[AUTH_COOKIE_NAME]
         })
     }
@@ -463,11 +386,11 @@ export function createEndpointHandler(
             bodyParsingAndValidationHandler = async (message, state) => {
                 let files
                 try {
-                    files = await parseMultipart(
+                    ({ files } = await parseMultipart(
                         message,
                         endpoint.files,
                         state.config?.multipart
-                    )
+                    ))
                 }
                 catch (err) {
                     throwIfOtherException(err)
@@ -478,29 +401,29 @@ export function createEndpointHandler(
         }
         else {
             bodyParsingAndValidationHandler = async (message, state) => {
-                let files
+                let files, fields
                 try {
-                    files = await parseMultipart(
+                    ({ files, fields } = await parseMultipart(
                         message,
                         endpoint.files,
                         state.config?.multipart
-                    )
+                    ))
                 }
                 catch (err) {
                     throwIfOtherException(err)
                     return errorResponse(err.value)
                 }
-                if (parseResult.value.fields[JSON_KEY] === undefined) {
+                if (fields[JSON_KEY] === undefined) {
                     return errorResponse({ tag: 'MultipartJSONFieldRequired' })
                 }
                 let json
                 try {
-                    json = parseJSONString(parseResult.value.fields[JSON_KEY])
+                    json = parseJSONString(fields[JSON_KEY])
                 }
                 catch {
                     return errorResponse({
                         tag: 'MultipartJSONFieldMalformed',
-                        field: parseResult.value.fields[JSON_KEY]
+                        field: fields[JSON_KEY]
                     })
                 }
                 const inputValidationResult = endpoint.input.validate(json)
@@ -549,32 +472,32 @@ export function createEndpointHandler(
     }
 
     const finalHandler = (_, state) => {
-        if (state.status === 101) {
-            return websocketResponse(state, endpoint.websocket.up)
+        if ('accept' in state) {
+            return webSocketResponse(state, endpoint.websocket.up)
         }
         switch (endpoint.responses[state.status]?.type) {
             case 'html':
                 return response(state)
-            case 'json':
+            case 'json': {
+                if (!state.headers.has('Content-Type')) {
+                    state.headers.set('Content-Type', 'application/json; charset=utf-8')
+                }
                 return response({
                     ...state,
-                    body: JSON.stringify(state.body),
-                    headers: {
-                        'Content-Type': 'application/json; charset=utf-8',
-                        ...state.headers
-                    }
+                    body: JSON.stringify(state.body)
                 })
-            case 'binary':
+            }
+            case 'binary': {
+                if (!state.headers.has('Content-Type')) {
+                    state.header.set('Content-Type', state.body.mimetype)
+                }
                 return response({
                     ...state,
-                    body: state.body.data,
-                    headers: {
-                        'Content-Type': state.body.mimetype,
-                        ...state.headers
-                    }
+                    body: state.body.data
                 })
+            }
             default:
-                throw new Error('Unexpected response type')
+                throw new Error('Unexpected response status')
         }
     }
 

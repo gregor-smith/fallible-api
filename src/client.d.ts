@@ -153,21 +153,23 @@ export type MessageListener<T> = (result: WebSocketMessageResult<T>) => void
 
 
 export declare class ValidatedWebSocket<WS extends WebSocketCommunication> {
-    public readonly validator: WS['down']
-    public readonly state: number
-    public readonly buffered: number
+    #private
 
-    public constructor(socket: WebSocket, validator: WS['down'])
+    readonly validator: WS['down']
+    readonly state: number
+    readonly buffered: number
 
-    public addCloseListener(listener: CloseListener): void
-    public removeCloseListener(listener: CloseListener): void
+    constructor(socket: WebSocket, validator: WS['down'])
 
-    public addMessageListener(listener: MessageListener<Static<WS['down']>>): void
-    public removeMessageListener(listener: MessageListener<Static<WS['down']>>): void
+    addCloseListener(listener: CloseListener): void
+    removeCloseListener(listener: CloseListener): void
 
-    public close(): void
+    addMessageListener(listener: MessageListener<Static<WS['down']>>): void
+    removeMessageListener(listener: MessageListener<Static<WS['down']>>): void
 
-    public send(message: Static<WS['up']>): void
+    close(): void
+
+    send(message: Static<WS['up']>): void
 }
 
 
