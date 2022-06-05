@@ -17,6 +17,7 @@ import type {
     JSONResponse,
     BinaryResponse
 } from './schema.js'
+import type { WebSocketMessageError as _WebSocketMessageError } from './shared.js'
 
 
 export declare function buildURL<
@@ -139,17 +140,11 @@ export type WebSocketConnectResult<Endpoint extends WebSocketEndpoint, Abortable
         WebSocketConnectError<Abortable>
     >
 
-export type WebSocketMessageError =
-    | { tag: 'InvalidTypeError', message: ArrayBuffer | Blob }
-    | { tag: 'InvalidJSONError', message: string }
-    | { tag: 'ValidationError', result: Failure, message: unknown }
-
-export type WebSocketMessageResult<T> = Result<T, WebSocketMessageError>
-
+export type WebSocketMessageError = _WebSocketMessageError<ArrayBuffer | Blob | ArrayBufferView>
 
 export type CloseListener = (event: CloseEvent) => void
 
-export type MessageListener<T> = (result: WebSocketMessageResult<T>) => void
+export type MessageListener<T> = (result: Result<T, WebSocketMessageError>) => void
 
 
 export declare class ValidatedWebSocket<WS extends WebSocketCommunication> {

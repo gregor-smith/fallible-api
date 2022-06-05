@@ -1,17 +1,16 @@
-import type { Result } from 'fallible'
+import type { ClientRequest, IncomingMessage } from 'node:http'
+
+import type { Awaitable, Result } from 'fallible'
 import type {
     MessageHandler,
     Headers,
     Response as FallibleResponse,
     StreamBody,
-    AwaitableIterator,
-    WebSocketCloseInfo,
-    WebSocketCloseCallback,
-    WebSocketSendErrorCallback,
     ParseWebSocketHeadersError,
     ParsedWebSocketHeaders
 } from 'fallible-server'
-import type { Failure, Runtype, Static } from 'runtypes'
+import type { Runtype, Static } from 'runtypes'
+import type WebSocket from 'ws'
 
 import type { JSON_KEY } from './constants.js'
 import type {
@@ -31,6 +30,7 @@ import type {
     JSONResponse,
     BinaryResponse
 } from './schema.js'
+import type { WebSocketMessageError as _WebSocketMessageError } from './shared.js'
 
 
 export interface EndpointHandlerPreStateURLSearchParams {
@@ -68,40 +68,71 @@ export type BodyHandlerResponse<Status extends number, Body> = {
     headers?: Headers
 }
 
+export interface ValidatedWebSocket<In, Out> extends WebSocket {
+    send(data: Out, callback?: (error?: Error) => void): void
+    send(
+        data: Out,
+        options: { 
+            mask?: boolean
+            binary?: boolean
+            compress?: boolean
+            fin?: boolean
+        },
+        callback?: (error?: Error) => void
+    ): void
+
+    on(event: 'validated-message', listener: (message: Result<In, WebSocketMessageError>) => void): this
+    on(event: 'close', listener: (this: WebSocket, code: number, reason: Buffer) => void): this
+    on(event: 'error', listener: (this: WebSocket, error: Error) => void): this
+    on(event: 'upgrade', listener: (this: WebSocket, request: IncomingMessage) => void): this
+    on(event: 'message', listener: (this: WebSocket, data: WebSocket.RawData, isBinary: boolean) => void): this
+    on(event: 'open', listener: (this: WebSocket) => void): this
+    on(event: 'ping' | 'pong', listener: (this: WebSocket, data: Buffer) => void): this
+    on(
+        event: 'unexpected-response',
+        listener: (this: WebSocket, request: ClientRequest, response: IncomingMessage) => void,
+    ): this
+    on(event: string | symbol, listener: (this: WebSocket, ...args: any[]) => void): this
+
+    once(event: 'validated-message', listener: (message: Result<In, WebSocketMessageError>) => void): this
+    once(event: 'close', listener: (this: WebSocket, code: number, reason: Buffer) => void): this
+    once(event: 'error', listener: (this: WebSocket, error: Error) => void): this
+    once(event: 'upgrade', listener: (this: WebSocket, request: IncomingMessage) => void): this
+    once(event: 'message', listener: (this: WebSocket, data: WebSocket.RawData, isBinary: boolean) => void): this
+    once(event: 'open', listener: (this: WebSocket) => void): this
+    once(event: 'ping' | 'pong', listener: (this: WebSocket, data: Buffer) => void): this
+    once(
+        event: 'unexpected-response',
+        listener: (this: WebSocket, request: ClientRequest, response: IncomingMessage) => void,
+    ): this
+    once(event: string | symbol, listener: (this: WebSocket, ...args: any[]) => void): this
+
+    off(event: 'validated-message', listener: (message: Result<In, WebSocketMessageError>) => void): this
+    off(event: 'close', listener: (this: WebSocket, code: number, reason: Buffer) => void): this
+    off(event: 'error', listener: (this: WebSocket, error: Error) => void): this
+    off(event: 'upgrade', listener: (this: WebSocket, request: IncomingMessage) => void): this
+    off(event: 'message', listener: (this: WebSocket, data: WebSocket.RawData, isBinary: boolean) => void): this
+    off(event: 'open', listener: (this: WebSocket) => void): this
+    off(event: 'ping' | 'pong', listener: (this: WebSocket, data: Buffer) => void): this
+    off(
+        event: 'unexpected-response',
+        listener: (this: WebSocket, request: ClientRequest, response: IncomingMessage) => void,
+    ): this
+    off(event: string | symbol, listener: (this: WebSocket, ...args: any[]) => void): this
+}
+
+export type WebSocketCallback<In, Out> = (uuid: string, socket: ValidatedWebSocket<In, Out>) => Awaitable<void>
+
+export type WebSocketMessageError = _WebSocketMessageError<Buffer | ArrayBuffer | Buffer[]>
+
 export type WebSocketHandlerResponse<In, Out> = {
     accept: string
     protocol?: string
     maximumMessageSize?: number
     uuid?: string
-    onOpen: WebSocketOpenCallback<Out>
-    onMessage?: WebSocketMessageCallback<In, Out>
-    onClose?: WebSocketCloseCallback
-    onSendError?: WebSocketSendErrorCallback
+    callback: WebSocketCallback<In, Out>
     headers?: Headers
 }
-
-export type WebSocketMessageError =
-    | {
-        tag: 'InvalidMessage'
-        data: string
-        result: Failure
-    }
-    | {
-        tag: 'NonJSONMessage'
-        data: string
-    }
-    | {
-        tag: 'NonStringMessage'
-        data: Buffer | Buffer[] | ArrayBuffer
-    }
-
-export type WebSocketOpenCallback<T> = (
-    socketUUID: string
-) => AwaitableIterator<T, WebSocketCloseInfo | void>
-export type WebSocketMessageCallback<In, Out> = (
-    message: Result<In, WebSocketMessageError>,
-    socketUUID: string
-) => AwaitableIterator<Out, WebSocketCloseInfo | void>
 
 
 export type WrongMethodError = {
@@ -190,9 +221,6 @@ export type MultipartJSONFieldInputInvalidError = {
 export type JSONMaximumSizeExceededError = {
     tag: 'JSONMaximumSizeExceeded'
 }
-export type JSONStreamClosedError = {
-    tag: 'JSONStreamClosed'
-}
 export type JSONStreamMalformedError = {
     tag: 'JSONStreamMalformed'
 }
@@ -263,7 +291,6 @@ export type BodyParsingAndValidationHandlerError<Endpoint extends EP, T> =
                 )
                 : (
                     | JSONMaximumSizeExceededError
-                    | JSONStreamClosedError
                     | JSONStreamMalformedError
                     | JSONInputInvalidError
                 )
@@ -273,7 +300,7 @@ export type BodyParsingAndValidationHandlerError<Endpoint extends EP, T> =
 export type InitialHandlerState<Endpoint extends EP, T> =
     & T
     & {
-        isWebSocketRequest: Endpoint extends WebSocketEndpoint
+        webSocket: Endpoint extends WebSocketEndpoint
             ? (HasAnyResponse<Endpoint['responses']> extends true
                 ? Result<ParsedWebSocketHeaders, ParseWebSocketHeadersError>
                 : ParsedWebSocketHeaders)

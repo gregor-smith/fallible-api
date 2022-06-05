@@ -2,6 +2,7 @@ import { error, ok } from 'fallible'
 import { parseCharSetContentTypeHeader } from 'fallible-server/utils'
 
 import { CSRF_HEADER, JSON_KEY } from './constants.js'
+import { validateWebSocketMessage } from './shared.js'
 
 
 const abortedError = error({ tag: 'Aborted' })
@@ -190,39 +191,11 @@ export class ValidatedWebSocket {
             if (this.#messageListeners.length === 0) {
                 return
             }
-            const result = this.#processMessageData(data)
+            const result = validateWebSocketMessage(data, this.validator)
             for (const listener of this.#messageListeners) {
                 listener(result)
             }
         })
-    }
-
-    #processMessageData(message) {
-        if (typeof message !== 'string') {
-            return error({
-                tag: 'InvalidTypeError',
-                message
-            })
-        }
-        let json
-        try {
-            json = parseJSONString(message)
-        }
-        catch {
-            return error({
-                tag: 'InvalidJSONError',
-                message
-            })
-        }
-        const result = this.validator.validate(json)
-        if (!result.success) {
-            return error({
-                tag: 'ValidationError',
-                result,
-                message
-            })
-        }
-        return ok(result.value)
     }
 
     addCloseListener(listener) {

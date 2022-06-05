@@ -18,6 +18,10 @@
     "./constants": {
       "types": "./src/constants.d.ts",
       "import": "./src/constants.js"
+    },
+    "./shared": {
+      "types": "./src/shared.d.ts",
+      "import": "./src/shared.js"
     }
   },
   "sideEffects": false,
@@ -32,9 +36,11 @@
   },
   "dependencies": {
     "@hapi/accept": "^5.0.2",
+    "@types/node": "^17.0.40",
     "fallible": "https://github.com/gregor-smith/fallible.git#v1.0.0",
     "fallible-server": "https://github.com/gregor-smith/fallible-server.git#v0.2.1-alpha",
-    "runtypes": "^6.5.1"
+    "runtypes": "^6.5.1",
+    "ws": "^8.7.0"
   },
   "scripts": {
     "typecheck": "tsc"

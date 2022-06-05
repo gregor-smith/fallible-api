@@ -9,8 +9,10 @@ import {
     parseContentLengthHeader,
     response
 } from 'fallible-server'
+import { Record as Rec } from 'runtypes'
 
 import { AUTH_COOKIE_NAME, CSRF_HEADER, JSON_KEY } from './constants.js'
+import { validateWebSocketMessage } from './shared.js'
 
 
 function errorResponse(state) {
@@ -28,68 +30,8 @@ function isUTF8JSONContentTypeHeader(header) {
         return false
     }
     const contentType = parseCharSetContentTypeHeader(header)
-    return contentType !== undefined
-        && contentType.type === 'application/json'
-        && /^utf-?8$/.test(contentType.characterSet)
-}
-
-
-function jsonOnOpenCallback(onOpen) {
-    return async function * (uuid) {
-        const iterator = onOpen(uuid)
-        while (true) {
-            const result = await iterator.next()
-            if (result.done) {
-                return result.value
-            }
-            yield JSON.stringify(result.value)
-        }
-    }
-}
-
-
-function messageToResult(data, validator) {
-    if (typeof data !== 'string') {
-        return error({ tag: 'NonStringMessage', data })
-    }
-    let json
-    try {
-        json = parseJSONString(data)
-    }
-    catch {
-        return error({ tag: 'NonJSONMessage', data })
-    }
-    const result = validator.validate(json)
-    if (!result.success) {
-        return error({ tag: 'InvalidMessage', data, result })
-    }
-    return ok(result.value)
-}
-
-
-function jsonOnMessageCallback(onMessage, validator) {
-    return async function * (data, uuid) {
-        const result = messageToResult(data, validator)
-        const iterator = onMessage(result, uuid)
-        while (true) {
-            const result = await iterator.next()
-            if (result.done) {
-                return result.value
-            }
-            yield JSON.stringify(result.value)
-        }
-    }
-}
-
-
-function webSocketResponse(state, inValidator) {
-    return response({
-        ...state,
-        onOpen: jsonOnOpenCallback(state.onOpen),
-        onMessage: state.onMessage === undefined
-            ? undefined
-            : jsonOnMessageCallback(state.onMessage, inValidator)
-    })
+    return contentType?.type === 'application/json'
+        && contentType.characterSet?.match(/^utf-?8$/) !== null
 }
 
 
@@ -124,7 +66,7 @@ function checkUpgradeForWebSocketEndpointWithNoResponses(headers) {
 
 
 function checkUpgradeForNonWebSocketEndpoint(headers) {
-    if (headers['upgrade'] !== undefined) {
+    if (headers['Upgrade'] !== undefined) {
         throw new InternalException({ tag: 'UpgradeDenied' })
     }
 }
@@ -217,7 +159,7 @@ function checkContentForBodyEndpointWithInputButNoFiles(headers, config) {
 async function parseMultipart(message, files, config) {
     const parseResult = await parseMultipartRequest(message, config)
     if (!parseResult.ok) {
-        switch (parseResult.tag) {
+        switch (parseResult.value.tag) {
             case 'InvalidMultipartContentTypeHeader':
                 throw new InternalException({ tag: 'InvalidContentTypeHeader' })
             case 'RequestAborted':
@@ -229,11 +171,11 @@ async function parseMultipart(message, files, config) {
             case 'MaximumTotalFileSizeExceeded':
             case 'MaximumFieldsCountExceeded':
             case 'MaximumFieldsSizeExceeded':
-                throw new InternalException({ tag: `Multipart${parseResult.tag}` })
+                throw new InternalException({ tag: `Multipart${parseResult.value.tag}` })
             case 'UnknownError':
                 throw new InternalException({
                     tag: 'MultipartUnknownParseError',
-                    error: parseResult.error
+                    error: parseResult.value.error
                 })
             default:
                 throw new Error('Unexpected multipart parse result')
@@ -242,9 +184,9 @@ async function parseMultipart(message, files, config) {
     const entries = Object.entries(files)
         .map(([ file, definition ]) => [
             file,
-            Record_(definition)
+            Rec(definition)
         ])
-    const validator = Record_(
+    const validator = Rec(
         Object.fromEntries(entries)
     )
     const filesValidationResult = validator.validate(parseResult.value.files)
@@ -445,11 +387,9 @@ export function createEndpointHandler(
         bodyParsingAndValidationHandler = async (message, state) => {
             const parseResult = await parseJSONStream(message, state.config?.json)
             if (!parseResult.ok) {
-                switch (parseResult.tag) {
+                switch (parseResult.value.tag) {
                     case 'MaximumSizeExceeded':
                         return errorResponse({ tag: 'JSONMaximumSizeExceeded' })
-                    case 'ReadError':
-                        return errorResponse({ tag: 'JSONStreamClosed' })
                     case 'DecodeError':
                     case 'InvalidSyntax':
                         return errorResponse({ tag: 'JSONStreamMalformed' })
@@ -473,7 +413,16 @@ export function createEndpointHandler(
 
     const finalHandler = (_, state) => {
         if ('accept' in state) {
-            return webSocketResponse(state, endpoint.websocket.up)
+            return response({
+                ...state,
+                callback: (uuid, socket) => {
+                    socket.on('message', data => {
+                        const result = validateWebSocketMessage(data, endpoint.websocket.up)
+                        socket.emit('validated-message', result)
+                    })
+                    return state.callback(uuid, socket)
+                }
+            })
         }
         switch (endpoint.responses[state.status]?.type) {
             case 'html':
@@ -518,7 +467,7 @@ export function createSchemaHandler(schema, handlers) {
     const escaped = schema.prefix.replace(regexEscapePattern, '\\$&')
     const prefixPattern = new RegExp(`^${escaped}(.+)`)
     return (message, state, sockets) => {
-        const path = prefixPattern.exec(state.url.pathname)?.[1]
+        const path = state.url.pathname.match(prefixPattern)?.[1]
         return handlers[path]?.(message, state, sockets) ?? response()
     }
 }
