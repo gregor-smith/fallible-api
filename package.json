@@ -40,7 +40,7 @@
     "fallible": "https://github.com/gregor-smith/fallible.git#v1.0.0",
     "fallible-server": "https://github.com/gregor-smith/fallible-server.git#v0.2.1-alpha",
     "runtypes": "^6.5.1",
-    "ws": "^8.7.0"
+    "ws": "^8.17.1"
   },
   "scripts": {
     "typecheck": "tsc"
